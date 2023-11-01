@@ -1,4 +1,4 @@
 
 (executables
-  (names echo)
+  (names count)
   (libraries luv2loop))

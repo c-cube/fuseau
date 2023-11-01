@@ -88,7 +88,5 @@ let await (self : 'a t) : 'a =
   | Some (Ok x) -> x
   | Some (Error e) -> Picos.Exn_bt.raise e
   | None ->
-    Effect.perform
-    @@ Effects_.Suspend
-         { suspended = (fun ~wakeup -> on_result self (fun _ -> wakeup ())) };
+    Suspend.suspend (fun ~wakeup -> on_result self (fun _ -> wakeup ()));
     get_or_fail_exn self
