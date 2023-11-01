@@ -1,0 +1,3 @@
+[submodule "vendor/picos"]
+	path = vendor/picos
+	url = https://github.com/ocaml-multicore/picos

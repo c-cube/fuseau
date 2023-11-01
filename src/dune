@@ -1,0 +1,7 @@
+
+(library
+  (name luv2loop)
+  (public_name luv2loop)
+  (private_modules run_ effects_)
+  (synopsis "IO and concurrency library on top of libuv")
+  (libraries atomic picos luv thread-local-storage))
