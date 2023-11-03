@@ -14,6 +14,7 @@ val has_tasks : t -> bool
 (** Are there currently waiting tasks? *)
 
 val spawn : t -> (unit -> 'a) -> 'a Fiber.t
+val schedule_micro_task : t -> (unit -> unit) -> unit
 
 val n_tasks : t -> int
 (** Number of tasks run so far *)
