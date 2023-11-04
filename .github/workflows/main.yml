@@ -30,7 +30,6 @@ jobs:
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
           dune-cache: true
-            sub
 
       - run: opam install -t fuseau --deps-only
       - run: opam exec -- dune build @install
