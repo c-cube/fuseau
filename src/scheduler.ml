@@ -52,9 +52,7 @@ let[@inline] as_disposable self =
 (** Run the next task, if any *)
 let run_next (self : t) : unit =
   match Queue.pop self.cur_q with
-  | work ->
-    print_endline "run next";
-    work ()
+  | work -> work ()
   | exception Queue.Empty -> ()
 
 type 'a with_cur_fiber = {

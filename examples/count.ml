@@ -9,7 +9,7 @@ let main () =
     Array.init 4 (fun j ->
         L2L.spawn @@ fun () ->
         print_endline @@ spf "spawn fiber %d" j;
-        for i = 1 to 100 do
+        for i = 1 to 10 do
           L2L.Timer.sleep_ms 100;
           print_endline @@ spf "iter %d (fiber %d)" i j
         done)

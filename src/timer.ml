@@ -9,16 +9,11 @@ let sleep_ms (n : int) =
   let t = T.init ~loop:(Event_loop.loop loop) () |> Err.unwrap_luv in
   let finally () = T.stop t |> Err.unwrap_luv in
   let@ () = Fun.protect ~finally in
-  print_endline "schedule timer";
 
   let trigger = Trigger.create () in
-  T.start t n (fun () ->
-      print_endline "timer: signal trigger";
-      Trigger.signal trigger)
-  |> Err.unwrap_luv;
-  (try Trigger.await_or_raise trigger
-   with _ -> print_endline "timer: trigger raised!");
-  print_endline "timer: trigger returned"
+  T.start t n (fun () -> Trigger.signal trigger) |> Err.unwrap_luv;
+  try Trigger.await_or_raise trigger
+  with _ -> print_endline "timer: trigger raised!"
 
 let every ?(start_ms = 0) ~repeat_ms (f : unit -> unit) : Disposable.t =
   let loop = Event_loop.Private.get_current_exn () in
