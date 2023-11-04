@@ -1,4 +1,4 @@
 
 (executables
   (names count)
-  (libraries luv2loop))
+  (libraries fuseau))

@@ -1,10 +1,10 @@
 (lang dune 2.0)
 
-(name luv2loop)
+(name fuseau)
 (generate_opam_files true)
 
 (source
- (github c-cube/luv2loop))
+ (github c-cube/fuseau))
 
 (authors "Simon Cruanes")
 (maintainers "Simon Cruanes")
@@ -13,8 +13,8 @@
 ;(documentation https://url/to/documentation)
 
 (package
- (name luv2loop)
- (synopsis "An IO and concurrency library built on libuv")
+ (name fuseau)
+ (synopsis "An IO and concurrency library built on picos+libuv")
  (depends (ocaml (>= 5.0)) dune luv picos atomic)
  (tags
   (libuv await effects event-loop thread-local-storage)))
