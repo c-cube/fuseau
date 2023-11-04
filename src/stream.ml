@@ -1,1 +1,1 @@
-type t = Luv.Stream.t
+(* type t = [ `Stream of _ ] Luv.Stream.t *)
