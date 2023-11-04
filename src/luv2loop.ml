@@ -1,8 +1,13 @@
-module Fiber = Fiber
+module Computation = Computation
+module Disposable = Disposable
 module Err = Err
-module Timer = Timer
+module Event_loop = Event_loop
 module Exn_bt = Exn_bt
-module Loop = Loop
+module Fiber = Fiber
+module Timer = Timer
+module Trigger = Trigger
 
-let create_loop () : Luv.Loop.t = Luv.Loop.init () |> Err.unwrap_luv
-let main = Loop.main
+let main = Event_loop.main
+let spawn = Scheduler.spawn
+let spawn_from_anywhere = Scheduler.spawn_from_anywhere
+let schedule_micro_task = Scheduler.schedule_micro_task
