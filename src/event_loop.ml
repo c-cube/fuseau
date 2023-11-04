@@ -94,7 +94,7 @@ let main ?loop (main : unit -> 'a) : 'a =
     | Some l -> l
   in
 
-  let scheduler = Scheduler.create () in
+  let scheduler = Scheduler.create ~loop () in
   let did_trigger_async = Atomic.make false in
   let self = { scheduler; loop; async = None; did_trigger_async } in
 

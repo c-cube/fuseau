@@ -2,7 +2,7 @@
 
 type t
 
-val create : unit -> t
+val create : loop:Luv.Loop.t -> unit -> t
 (** New scheduler. *)
 
 val active : t -> bool

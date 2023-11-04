@@ -5,6 +5,7 @@ type task = unit -> unit
 
 type t = {
   active: bool Atomic.t;
+  loop: Luv.Loop.t;
   cur_q: task Queue.t;
   next_q: task Queue.t;
   outside_q: task Queue.t Lock.t;  (** Queue of tasks from the outside *)
@@ -34,9 +35,10 @@ module Private = struct
   let k_current_scheduler = k_current_scheduler
 end
 
-let create () : t =
+let create ~loop () : t =
   {
     tid = Thread.id @@ Thread.self ();
+    loop;
     active = Atomic.make true;
     cur_q = Queue.create ();
     next_q = Queue.create ();
@@ -83,6 +85,8 @@ let rec fork (self : _ with_cur_fiber) (main : task) : unit =
       Some (handle_spawn self ~forbid computation mains)
     | Fiber.Yield -> yield
     | Trigger.Await trigger -> Some (handle_await self trigger)
+    | Computation.Cancel_after { seconds; computation; exn_bt } ->
+      Some (handle_cancel_after self ~seconds ~computation ~exn_bt)
     | _ -> None
   and retc () = run_next self.scheduler in
   Effect.Deep.match_with main () { retc; exnc = raise; effc }
@@ -164,6 +168,26 @@ and handle_await :
        this scheduler we choose to continue the current fiber. *)
     ED.continue k (Fiber.canceled self.fiber)
   )
+
+and handle_cancel_after :
+    type a.
+    _ with_cur_fiber ->
+    seconds:float ->
+    exn_bt:Exn_bt.t ->
+    computation:a Computation.as_cancelable ->
+    (unit, unit) ED.continuation ->
+    unit =
+ fun self ~seconds ~exn_bt ~computation k ->
+  (* start a timer *)
+  let t = Luv.Timer.init ~loop:self.scheduler.loop () |> Err.unwrap_luv in
+  Luv.Timer.start t
+    (int_of_float @@ ceil @@ (seconds *. 1000.))
+    (fun () ->
+      Luv.Timer.stop t |> Err.unwrap_luv;
+      Computation.cancel computation exn_bt)
+  |> Err.unwrap_luv;
+  (* resume *)
+  ED.continue k ()
 
 let run_single_fun (self : t) ~forbid (f : unit -> 'a) :
     ('a, [ `Await | `Cancel ]) Computation.t =
