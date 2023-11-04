@@ -1,25 +1,9 @@
 (** Bidirectional byte streams *)
 
+open Utils_
+
 type 'kind t = 'kind Luv.Stream.t
 type any = Stream : [ `Stream of _ ] Luv.Stream.t -> any [@@unboxed]
-
-open struct
-  let unwrap_luv_res = function
-    | Ok x -> x
-    | Error ler ->
-      let bt = Printexc.get_callstack 10 in
-      Exn_bt.raise { Exn_bt.exn = Err.(E (E_luv ler)); bt }
-
-  let await_cb_ (init : 'a) (f : (('a, Luv.Error.t) result -> unit) -> unit) :
-      'a =
-    let trigger = Trigger.create () in
-    let ebt = ref (Ok init) in
-    f (fun res ->
-        Trigger.signal trigger;
-        ebt := res);
-    Trigger.await_or_raise trigger;
-    unwrap_luv_res !ebt
-end
 
 let shutdown (self : _ t) : unit =
   await_cb_ () @@ fun k -> Luv.Stream.shutdown self k
