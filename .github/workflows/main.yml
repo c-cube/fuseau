@@ -30,7 +30,11 @@ jobs:
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
           dune-cache: true
+          opam-pin: false
+          opam-local-packages: ""
 
+      - run: opam pin vendor/picos/ -y -n
+      - run: opam pin . -y -n
       - run: opam install -t fuseau --deps-only
       - run: opam exec -- dune build @install
       - run: opam exec -- dune runtest
