@@ -3,11 +3,15 @@ module ED = Effect.Deep
 
 type task = unit -> unit
 
+let max_tasks_in_tick_ = 128
+
 type t = {
   active: bool Atomic.t;
   loop: Luv.Loop.t;
-  cur_q: task Queue.t;
-  next_q: task Queue.t;
+  mutable n_tasks_done_in_tick: int;
+      (** Number of tasks run in the current tick *)
+  task_q: task Queue.t;  (** Queue of regular tasks *)
+  micro_tasks_q: task Queue.t;  (** Microtasks, run almost immediately *)
   outside_q: task Queue.t Lock.t;  (** Queue of tasks from the outside *)
   tid: int;  (** Current thread *)
   mutable n_tasks: int;  (** Total number of tasks processed since the start *)
@@ -16,18 +20,18 @@ type t = {
 let k_current_scheduler : t option ref TLS.key =
   TLS.new_key (fun () -> ref None)
 
-let[@inline] schedule_for_this_round_ (self : t) (f : task) : unit =
-  Queue.push f self.cur_q
+let[@inline] schedule_ (self : t) (f : task) : unit = Queue.push f self.task_q
 
-let[@inline] schedule_for_next_round_ (self : t) (task : task) : unit =
-  Queue.push task self.next_q
+let[@inline] schedule_micro_task_ (self : t) f : unit =
+  Queue.push f self.micro_tasks_q
 
 let[@inline] active self = Atomic.get self.active
 let[@inline] n_tasks self = self.n_tasks
 
 let has_pending_tasks self : bool =
   not
-    (Queue.is_empty self.cur_q && Queue.is_empty self.next_q
+    (Queue.is_empty self.task_q
+    && Queue.is_empty self.micro_tasks_q
     && Lock.map_no_exn Queue.is_empty self.outside_q)
 
 module Private = struct
@@ -39,9 +43,10 @@ let create ~loop () : t =
   {
     tid = Thread.id @@ Thread.self ();
     loop;
+    n_tasks_done_in_tick = 0;
     active = Atomic.make true;
-    cur_q = Queue.create ();
-    next_q = Queue.create ();
+    task_q = Queue.create ();
+    micro_tasks_q = Queue.create ();
     outside_q = Lock.create @@ Queue.create ();
     n_tasks = 0;
   }
@@ -53,9 +58,21 @@ let[@inline] as_disposable self =
 
 (** Run the next task, if any *)
 let run_next (self : t) : unit =
-  match Queue.pop self.cur_q with
-  | work -> work ()
-  | exception Queue.Empty -> ()
+  (* run microtasks *)
+  while not (Queue.is_empty self.micro_tasks_q) do
+    let f = Queue.pop self.micro_tasks_q in
+    try f ()
+    with e ->
+      Printf.eprintf "warning: microtask raised %s\n" (Printexc.to_string e)
+  done;
+
+  if self.n_tasks_done_in_tick < max_tasks_in_tick_ then (
+    match Queue.pop self.task_q with
+    | work ->
+      self.n_tasks_done_in_tick <- self.n_tasks_done_in_tick + 1;
+      work ()
+    | exception Queue.Empty -> ()
+  )
 
 type 'a with_cur_fiber = {
   scheduler: t;
@@ -66,7 +83,7 @@ type 'a with_cur_fiber = {
 let resume (self : _ with_cur_fiber) (trigger : _ Trigger.t) fiber k : unit =
   if not (Fiber.has_forbidden fiber) then Fiber.detach fiber trigger;
   let work () = Effect.Deep.continue k (Fiber.canceled fiber) in
-  schedule_for_this_round_ self.scheduler work
+  schedule_micro_task_ self.scheduler work
 
 let rec fork (self : _ with_cur_fiber) (main : task) : unit =
   self.scheduler.n_tasks <- 1 + self.scheduler.n_tasks;
@@ -74,7 +91,7 @@ let rec fork (self : _ with_cur_fiber) (main : task) : unit =
   and yield =
     Some
       (fun k ->
-        schedule_for_next_round_ self.scheduler (Fiber.continue self.fiber k);
+        schedule_ self.scheduler (Fiber.continue self.fiber k);
         run_next self.scheduler)
   in
 
@@ -108,8 +125,7 @@ and handle_spawn :
     List.iter
       (fun main ->
         let fiber = Fiber.create ~forbid computation in
-        schedule_for_this_round_ self.scheduler (fun () ->
-            fork { self with fiber } main))
+        schedule_ self.scheduler (fun () -> fork { self with fiber } main))
       mains;
     (* and resume parent fiber *)
     ED.continue k ()
@@ -196,12 +212,12 @@ let run_single_fun (self : t) ~forbid (f : unit -> 'a) :
   let work () =
     fork { scheduler = self; fiber } (Computation.capture computation f)
   in
-  schedule_for_next_round_ self work;
+  schedule_ self work;
   (computation :> (_, [ `Await | `Cancel ]) Computation.t)
 
 let run_iteration (self : t) : unit =
-  Queue.transfer self.next_q self.cur_q;
-  Lock.with_ self.outside_q (fun q -> Queue.transfer q self.cur_q);
+  Lock.with_ self.outside_q (fun q -> Queue.transfer q self.task_q);
+  self.n_tasks_done_in_tick <- 0;
   run_next self
 
 (** Scheduler for the current thread *)
@@ -227,6 +243,6 @@ let spawn_from_anywhere (self : t) f : _ Computation.t =
     (computation :> (_, [ `Await | `Cancel ]) Computation.t)
   )
 
-let schedule_micro_task (f : unit -> unit) : unit =
+let[@inline] schedule_micro_task (f : unit -> unit) : unit =
   let self = get_sched_for_cur_thread_ () in
-  schedule_for_this_round_ self f
+  schedule_micro_task_ self f

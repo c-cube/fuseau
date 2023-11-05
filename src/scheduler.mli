@@ -18,7 +18,10 @@ val spawn : (unit -> 'a) -> ('a, [ `Await | `Cancel ]) Computation.t
 val schedule_micro_task : (unit -> unit) -> unit
 (** Must be run from inside the scheduler's thread. Schedules a microtask
     that will run in this tick. Be careful not to create infinite sequences
-    of micro tasks that starve the IO loop! *)
+    of micro tasks that starve the IO loop!
+
+    These microtasks do not handle effects and should try their best to
+    not raise exceptions. Only use them for very short amount of work. *)
 
 val spawn_from_anywhere :
   t -> (unit -> 'a) -> ('a, [ `Await | `Cancel ]) Computation.t
