@@ -53,8 +53,10 @@ let create ~loop () : t =
 
 let[@inline] dispose (self : t) : unit = Atomic.set self.active false
 
-let[@inline] as_disposable self =
-  { Disposable.dispose = (fun () -> dispose self) }
+let as_disposable self : Disposable.t =
+  object
+    method dispose = dispose self
+  end
 
 (** Run the next task, if any *)
 let run_next (self : t) : unit =

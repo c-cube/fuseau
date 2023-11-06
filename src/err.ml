@@ -4,6 +4,8 @@ type t =
 
 exception E of t
 
+type 'a or_error = ('a, t) result
+
 let to_string (e : t) : string =
   match e with
   | E_luv err -> Luv.Error.strerror err

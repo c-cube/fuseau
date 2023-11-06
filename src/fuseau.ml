@@ -5,10 +5,11 @@ module Err = Err
 module Event_loop = Event_loop
 module Exn_bt = Exn_bt
 module Fiber = Fiber
+module Luv_tream = Luv_stream
+module Scheduler = Scheduler
 module Stream = Stream
 module Tcp = Tcp
 module Timer = Timer
-module Scheduler = Scheduler
 module Trigger = Trigger
 
 (** See {!Event_loop.main} *)

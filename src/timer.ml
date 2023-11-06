@@ -18,4 +18,6 @@ let every ?(start_ms = 0) ~repeat_ms (f : unit -> unit) : Disposable.t =
   let loop = Event_loop.Private.get_current_exn () in
   let t = T.init ~loop:(Event_loop.loop loop) () |> Err.unwrap_luv in
   T.start t ~repeat:repeat_ms start_ms f |> Err.unwrap_luv;
-  { Disposable.dispose = (fun () -> T.stop t |> Err.unwrap_luv) }
+  object
+    method dispose = T.stop t |> Err.unwrap_luv
+  end

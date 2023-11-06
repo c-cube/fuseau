@@ -1,5 +1,8 @@
 (** Something that can be terminated *)
 
-type t = { dispose: unit -> unit } [@@unboxed]
+class type t =
+  object
+    method dispose : unit
+  end
 
-let[@inline] dispose (self : t) : unit = self.dispose ()
+let[@inline] dispose (self : #t) : unit = self#dispose

@@ -1,64 +1,126 @@
-(** Bidirectional byte streams *)
+(** High level concurrent streams.
 
-open Utils_
+    The design is closely inspired from web streams
+    (see: https://streams.spec.whatwg.org/ and
+    https://developer.mozilla.org/en-US/docs/Web/API/Streams_API)
+*)
 
-type 'kind t = 'kind Luv.Stream.t
-type any = Stream : [ `Stream of _ ] Luv.Stream.t -> any [@@unboxed]
+(** Reader *)
+module Reader = struct
+  (** Reader: an object to read from a readable stream *)
+  class type ['a] t =
+    object
+      inherit Disposable.t
+      method closed : bool
+      method read : 'a option
+    end
 
-let shutdown (self : _ t) : unit =
-  await_cb_ () @@ fun k -> Luv.Stream.shutdown self k
+  (** Bring your own buffer reader *)
+  class type byob_t =
+    object
+      inherit [Buffer.t] t
 
-let listen ?backlog (self : _ t) : unit =
-  await_cb_ () @@ fun k -> Luv.Stream.listen ?backlog self k
+      method read_into : Buffer.t -> int -> int -> int
+      (** [read buf i len] reads at most [len] bytes into [buf]
+        starting at offset [i].
+        If it returns [0] it means the stream has come to an end. *)
+    end
+end
 
-let accept ~server ~client : unit =
-  Luv.Stream.accept ~server ~client |> unwrap_luv_res
+(** Writer *)
+module Writer = struct
+  (** Writer: an object to write into a writable stream *)
+  class type ['a] t =
+    object
+      inherit Disposable.t
+      method closed : bool
 
-let dummy_buf_ = Buffer.create 0
+      method write : 'a -> unit
+      (** Write the given object *)
+    end
 
-let read_start ?allocate (self : _ t) : Buffer.t =
-  await_cb_ Buffer.Private.dummy @@ fun k ->
-  Luv.Stream.read_start ?allocate self k
+  (** Bring your own buffer writer *)
+  class type byob_t =
+    object
+      inherit [Buffer.t] t
+      method write_slice : Buffer.t -> int -> int -> unit
+      method writev : Buffer.t list -> unit
+    end
+end
 
-let read_stop (self : _ t) : unit = Luv.Stream.read_stop self |> unwrap_luv_res
+exception Already_in_use
 
-(* TODO: basic read *)
+(** Writable stream *)
+module Writable = struct
+  (** Writable stream *)
+  class type ['a] t =
+    object
+      inherit Disposable.t
 
-let try_write (self : _ t) bufs : int option =
-  match Luv.Stream.try_write self bufs with
-  | Ok n -> Some n
-  | Error _ -> None
+      method is_in_use : bool
+      (** Does the stream currently have an active writer/pipe? *)
 
-let rec write (self : _ t) bufs : unit =
-  if bufs = [] then
-    ()
-  else (
-    match try_write self bufs with
-    | Some n ->
-      let bufs = Buffer.drop bufs n in
-      if bufs <> [] then write self bufs
-    | None ->
-      (* we need to block *)
-      let trigger = Trigger.create () in
-      let bufs = ref bufs in
-      let ebt = ref (Ok ()) in
-      Luv.Stream.write self !bufs (fun r n ->
-          bufs := Buffer.drop !bufs n;
-          ebt := r);
-      Trigger.await_or_raise trigger;
+      method get_writer : 'a Writer.t
+      (** Obtain a writer into this stream.
+          @raise Already_in_use if the stream is already being used *)
+    end
 
-      unwrap_luv_res !ebt;
-      write self !bufs
-  )
+  class type byte_t =
+    object
+      inherit [Buffer.t] t
 
-(* TODO: write2, read2 *)
+      method get_byob_writer : Writer.byob_t
+      (** Obtain a BYOB writer into this stream.
+          @raise Already_in_use if the stream is already being used *)
+    end
+end
 
-let is_readable : _ t -> bool = Luv.Stream.is_readable
-let is_writable : _ t -> bool = Luv.Stream.is_writable
+(** Readable stream *)
+module Readable = struct
+  (** Readable stream *)
+  class type ['a] t =
+    object
+      inherit Disposable.t
 
-let set_blocking (self : _ t) (b : bool) : unit =
-  Luv.Stream.set_blocking self b |> Err.unwrap_luv
+      method is_in_use : bool
+      (** Is the stream being read from by something? If true,
+          trying to create more pipes or readers will fail.
 
-type connect_request = Luv.Stream.Connect_request.t
+          This corresponds to the [locked] property on web streams. *)
 
-let coerce = Luv.Stream.coerce
+      method get_reader : 'a Reader.t
+      (** Obtain a reader.
+          @raise Already_in_use if the stream is already being used *)
+
+      (* TODO: do we need this general version? Or can it be done in a virtual class?
+          method pipe_into : 'a #Writer.t -> unit
+      *)
+    end
+
+  class type byte_t =
+    object
+      inherit [Buffer.t] t
+
+      method get_byob_reader : Reader.byob_t
+      (** Obtain a BYOB reader.
+          @raise Already_in_use if the stream is already being used *)
+
+      method pipe_into_byte_stream : #Writable.byte_t -> unit
+    end
+end
+
+(** Readable and writable streams *)
+module ReadWritable = struct
+  (** Readable and writable streams *)
+  class type ['a] t =
+    object
+      inherit ['a] Readable.t
+      inherit ['a] Writable.t
+    end
+
+  class type byte_t =
+    object
+      inherit Readable.byte_t
+      inherit Writable.byte_t
+    end
+end

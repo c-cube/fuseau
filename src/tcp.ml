@@ -1,38 +1,57 @@
 (** TCP streams *)
 
-open Utils_
+module Address_family = struct
+  type t =
+    [ `INET
+    | `INET6
+    | `OTHER of int
+    | `UNSPEC
+    ]
 
-type t = [ `TCP ] Stream.t
+  (* same type *)
+  let () = ignore (fun (x : t) : Sockaddr.Address_family.t -> x)
+end
 
-let init ?domain () : t =
-  let loop = Event_loop.Private.get_current_exn () |> Event_loop.loop in
-  Luv.TCP.init ~loop ?domain () |> unwrap_luv_res
+(** Connect to given address *)
+let connect ?allocate ?domain (addr : Sockaddr.t) : Stream.ReadWritable.byte_t =
+  let stream = Luv_tcp.init ?domain () in
+  (* TODO: make it configurable *)
+  Luv_tcp.nodelay stream true;
+  Luv_tcp.connect stream addr;
+  new Luv_stream.readable_writable_stream stream ?allocate
 
-let open_ (self : t) sock : unit = Luv.TCP.open_ self sock |> unwrap_luv_res
+let establish_server ?domain ?ipv6only ?backlog (addr : Sockaddr.t)
+    (handle_client : Luv_stream.readable_writable_stream -> unit) : Disposable.t
+    =
+  let stream = Luv_tcp.init ?domain () in
+  (* TODO: make it configurable *)
+  Luv_tcp.nodelay stream true;
+  Luv_tcp.bind ?ipv6only stream addr;
+  Luv_stream.listen ?backlog stream;
 
-module Flag = Luv.TCP.Flag
+  let run () : unit =
+    let fiber = Fiber.current () in
+    let (Computation.Packed current_comp) = Fiber.computation fiber in
 
-let socketpair ?fst_flags ?snd_flags (st : Sockaddr.Socket_type.t) kind :
-    Os_fd.Socket.t * Os_fd.Socket.t =
-  Luv.TCP.socketpair ?fst_flags ?snd_flags st kind |> unwrap_luv_res
+    while true do
+      Fiber.check fiber;
 
-let nodelay self b : unit = Luv.TCP.nodelay self b |> unwrap_luv_res
-let keepalive self b : unit = Luv.TCP.keepalive self b |> unwrap_luv_res
+      let sock_client = Luv_tcp.init ?domain () in
 
-let simultaneous_accepts self b : unit =
-  Luv.TCP.simultaneous_accepts self b |> unwrap_luv_res
+      Luv_stream.accept ~server:stream ~client:sock_client;
+      Fiber.spawn ~forbid:false current_comp
+        [
+          (fun () ->
+            let client = new Luv_stream.readable_writable_stream sock_client in
+            handle_client client);
+        ]
+    done
+  in
 
-let bind ?ipv6only (self : t) (addr : Sockaddr.t) : unit =
-  Luv.TCP.bind ?ipv6only self addr |> unwrap_luv_res
+  let comp : (unit, _) Computation.t = Scheduler.spawn run in
 
-let getsockname (self : t) : Sockaddr.t =
-  Luv.TCP.getsockname self |> unwrap_luv_res
-
-let getpeername (self : t) : Sockaddr.t =
-  Luv.TCP.getpeername self |> unwrap_luv_res
-
-let connect self addr : unit =
-  await_cb_ () @@ fun k -> Luv.TCP.connect self addr k
-
-let close_reset self : unit =
-  await_cb_ () @@ fun k -> Luv.TCP.close_reset self k
+  object
+    method dispose =
+      let bt = Printexc.get_callstack 10 in
+      Computation.cancel comp { Exn_bt.exn = Sys.Break; bt }
+  end
