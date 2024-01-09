@@ -12,6 +12,8 @@ depends: [
   "dune"
   "luv"
   "picos"
+  "thread-local-storage"
+  "cstruct" {>= "6.0"}
   "atomic"
 ]
 build: [

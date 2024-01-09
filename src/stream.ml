@@ -1,126 +1,96 @@
-(** High level concurrent streams.
+type awakener = unit -> unit
 
-    The design is closely inspired from web streams
-    (see: https://streams.spec.whatwg.org/ and
-    https://developer.mozilla.org/en-US/docs/Web/API/Streams_API)
-*)
+type 'a writer = {
+  try_push: 'a -> bool;
+  call_to_resume: awakener -> unit;
+}
 
-(** Reader *)
-module Reader = struct
-  (** Reader: an object to read from a readable stream *)
-  class type ['a] t =
-    object
-      inherit Disposable.t
-      method closed : bool
-      method read : 'a option
-    end
+type 'a t = {
+  buffered: 'a Queue.t;
+  max_size: int;
+  mutable cur_size: int;
+  readers: [ `Signal ] Picos.Trigger.t Queue.t;
+  writers: awakener Queue.t;
+  mutable closed: bool;
+  compute_size: 'a -> int;
+}
 
-  (** Bring your own buffer reader *)
-  class type byob_t =
-    object
-      inherit [Buffer.t] t
+type buf_writer = Luv.Buffer.t writer
+type buf_t = Luv.Buffer.t t
 
-      method read_into : Buffer.t -> int -> int -> int
-      (** [read buf i len] reads at most [len] bytes into [buf]
-        starting at offset [i].
-        If it returns [0] it means the stream has come to an end. *)
-    end
-end
+exception Closed
 
-(** Writer *)
-module Writer = struct
-  (** Writer: an object to write into a writable stream *)
-  class type ['a] t =
-    object
-      inherit Disposable.t
-      method closed : bool
+let close self =
+  if not self.closed then (
+    self.closed <- true;
+    (* wake up everyone *)
+    Queue.iter (fun f -> f ()) self.writers;
+    Queue.clear self.writers;
+    Queue.iter (fun tr -> Picos.Trigger.signal tr) self.readers;
+    Queue.clear self.readers
+  )
 
-      method write : 'a -> unit
-      (** Write the given object *)
-    end
+let create ?(max_size = 5) ?(compute_size = fun _ -> 1) () : _ t =
+  {
+    max_size;
+    compute_size;
+    buffered = Queue.create ();
+    cur_size = 0;
+    closed = false;
+    readers = Queue.create ();
+    writers = Queue.create ();
+  }
 
-  (** Bring your own buffer writer *)
-  class type byob_t =
-    object
-      inherit [Buffer.t] t
-      method write_slice : Buffer.t -> int -> int -> unit
-      method writev : Buffer.t list -> unit
-    end
-end
+let create_byte ?(max_size = 64 * 1024) () : buf_t =
+  create ~max_size ~compute_size:Luv.Buffer.size ()
 
-exception Already_in_use
+let[@inline] is_empty self = self.cur_size = 0
+let[@inline] is_full self = self.cur_size >= self.max_size
+let[@inline] size self = self.cur_size
 
-(** Writable stream *)
-module Writable = struct
-  (** Writable stream *)
-  class type ['a] t =
-    object
-      inherit Disposable.t
+let try_push (self : 'a t) (x : 'a) : bool =
+  if self.closed then
+    raise Closed
+  else if self.cur_size < self.max_size then (
+    Queue.push x self.buffered;
+    self.cur_size <- self.cur_size + self.compute_size x;
 
-      method is_in_use : bool
-      (** Does the stream currently have an active writer/pipe? *)
+    (* maybe awake a reader *)
+    (match Queue.pop self.readers with
+    | exception Queue.Empty -> ()
+    | r -> Picos.Trigger.signal r);
 
-      method get_writer : 'a Writer.t
-      (** Obtain a writer into this stream.
-          @raise Already_in_use if the stream is already being used *)
-    end
+    true
+  ) else
+    false
 
-  class type byte_t =
-    object
-      inherit [Buffer.t] t
+let rec push (self : 'a t) (x : 'a) : unit =
+  if not (try_push self x) then (
+    (* have to wait for some space to free up *)
+    let tr = Picos.Trigger.create () in
+    Queue.push (fun () -> Picos.Trigger.signal tr) self.writers;
+    (match Picos.Trigger.await tr with
+    | None -> ()
+    | Some ebt -> Exn_bt.raise ebt);
+    push self x
+  )
 
-      method get_byob_writer : Writer.byob_t
-      (** Obtain a BYOB writer into this stream.
-          @raise Already_in_use if the stream is already being used *)
-    end
-end
+let get_writer (self : 'a t) : 'a writer =
+  {
+    try_push = try_push self;
+    call_to_resume = (fun (wake : awakener) -> Queue.push wake self.writers);
+  }
 
-(** Readable stream *)
-module Readable = struct
-  (** Readable stream *)
-  class type ['a] t =
-    object
-      inherit Disposable.t
-
-      method is_in_use : bool
-      (** Is the stream being read from by something? If true,
-          trying to create more pipes or readers will fail.
-
-          This corresponds to the [locked] property on web streams. *)
-
-      method get_reader : 'a Reader.t
-      (** Obtain a reader.
-          @raise Already_in_use if the stream is already being used *)
-
-      (* TODO: do we need this general version? Or can it be done in a virtual class?
-          method pipe_into : 'a #Writer.t -> unit
-      *)
-    end
-
-  class type byte_t =
-    object
-      inherit [Buffer.t] t
-
-      method get_byob_reader : Reader.byob_t
-      (** Obtain a BYOB reader.
-          @raise Already_in_use if the stream is already being used *)
-
-      method pipe_into_byte_stream : #Writable.byte_t -> unit
-    end
-end
-
-(** Readable and writable streams *)
-module ReadWritable = struct
-  (** Readable and writable streams *)
-  class type ['a] t =
-    object
-      inherit ['a] Readable.t
-      inherit ['a] Writable.t
-    end
-
-  class type byte_t =
-    object
-      inherit Readable.byte_t
-      inherit Writable.byte_t
-    end
-end
+let rec pop (self : 'a t) : 'a option =
+  match Queue.pop self.buffered with
+  | item -> Some item
+  | exception Queue.Empty ->
+    if self.closed then
+      None
+    else (
+      let tr = Picos.Trigger.create () in
+      Queue.push (tr :> [ `Signal ] Picos.Trigger.t) self.readers;
+      match Picos.Trigger.await tr with
+      | Some ebt -> Exn_bt.raise ebt
+      | None -> (pop [@tailcall]) self
+    )
