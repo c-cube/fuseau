@@ -24,12 +24,10 @@ val schedule_micro_task : (unit -> unit) -> unit
     These microtasks do not handle effects and should try their best to
     not raise exceptions. Only use them for very short amount of work. *)
 
-(* TODO:
-   val spawn_from_anywhere : t -> (unit -> 'a) -> 'a Fiber.t
-   (** Spawn a task from anywhere, possibly from another thread. The task will
-       run in a subsequent call to {!run_iteration} in the scheduler's thread.
-       Thread-safe. *)
-*)
+val spawn_from_anywhere : t -> (unit -> 'a) -> 'a Fiber.t
+(** Spawn a task from anywhere, possibly from another thread. The task will
+    run in a subsequent call to {!run_iteration} in the scheduler's thread.
+    Thread-safe, more costly than {!spawn}. Runs under the root switch. *)
 
 val n_tasks_since_beginning : t -> int
 (** Number of tasks run so far. *)

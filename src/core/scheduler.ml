@@ -114,20 +114,12 @@ let spawn ?(propagate_cancel_to_parent = true) (f : unit -> 'a) : 'a Fiber.t =
   schedule_ self (T_start (fiber, f));
   fiber
 
-(* FIXME:
-   let spawn_from_anywhere (self : t) f : _ Fiber.t = assert false
-      if Thread.id (Thread.self ()) = self.tid then
-        run_single_fun self ~forbid:false f
-      else (
-        let computation = Computation.create () in
-        let fiber = Fiber.create ~forbid:false computation in
-        let work () =
-          fork { scheduler = self; fiber } (Computation.capture computation f)
-        in
-        Lock.with_ self.outside_q (fun q -> Queue.push work q);
-        (computation :> (_, [ `Await | `Cancel ]) Computation.t)
-      )
-*)
+let spawn_from_anywhere (self : t) f : _ Fiber.t =
+  let switch = self.root_switch in
+  let fiber = Fiber.Internal_.create ~switch () in
+  Switch.Internal_.add_child switch (Any_fiber fiber);
+  Lock.with_ self.outside_q (fun q -> Queue.push (T_start (fiber, f)) q);
+  fiber
 
 let run_task (self : t) (task : task) : unit =
   match task with

@@ -31,5 +31,6 @@ module Lock = Lock
 (** {2 Re-exports} *)
 
 let spawn = Scheduler.spawn
+let spawn_from_anywhere = Scheduler.spawn_from_anywhere
 let schedule_micro_task = Scheduler.schedule_micro_task
 let main = Main.main
