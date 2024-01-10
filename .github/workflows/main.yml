@@ -18,7 +18,7 @@ jobs:
               #- macos-latest
               #- windows-latest
         ocaml-compiler:
-            - '5.0'
+            - '5.1'
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -32,6 +32,7 @@ jobs:
           dune-cache: true
           opam-pin: false
           opam-local-packages: ""
+          allow-prerelease-opam: true
 
       - run: opam pin vendor/picos/ -y -n
       - run: opam pin . -y -n
