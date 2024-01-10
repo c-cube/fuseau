@@ -35,10 +35,17 @@ let () =
       | Some s -> s.cur_fiber
       | None -> None
 
+exception Inactive
+
+let[@inline] check_active_ (self : t) =
+  if not (A.get self.active) then raise Inactive
+
 let[@inline] schedule_ (self : t) (task : task) : unit =
+  check_active_ self;
   Queue.push task self.task_q
 
 let[@inline] schedule_micro_task_ (self : t) f : unit =
+  check_active_ self;
   Queue.push f self.micro_tasks_q
 
 let[@inline] active self = Atomic.get self.active
@@ -50,7 +57,7 @@ let[@inline] has_pending_tasks self : bool =
     && Queue.is_empty self.micro_tasks_q
     && Lock.map_no_exn Queue.is_empty self.outside_q)
 
-module Private = struct
+module Internal_ = struct
   let has_pending_tasks = has_pending_tasks
   let k_current_scheduler = k_current_scheduler
   let[@inline] ev_loop self = self.ev_loop
@@ -71,7 +78,12 @@ let create ?(max_tick_duration_us = _default_max_tick_duration_us) ~ev_loop () :
     max_tick_duration_us;
   }
 
-let[@inline] dispose (self : t) : unit = Atomic.set self.active false
+let dispose (self : t) : unit =
+  if Atomic.exchange self.active false then (
+    (* cancel the main task *)
+    let ebt = Exn_bt.get_callstack 15 Exit in
+    Switch.cancel self.root_switch ebt
+  )
 
 (** Has the work quota for the current iteration expired? *)
 let tick_is_expired_ (self : t) : bool =
@@ -93,6 +105,7 @@ let[@inline] schedule_micro_task (f : unit -> unit) : unit =
 
 let spawn ?(propagate_cancel_to_parent = true) (f : unit -> 'a) : 'a Fiber.t =
   let self : t = get_sched_for_cur_thread_ () in
+  check_active_ self;
 
   (* build a switch for the fiber *)
   let parent =
@@ -115,6 +128,7 @@ let spawn ?(propagate_cancel_to_parent = true) (f : unit -> 'a) : 'a Fiber.t =
   fiber
 
 let spawn_from_anywhere (self : t) f : _ Fiber.t =
+  check_active_ self;
   let switch = self.root_switch in
   let fiber = Fiber.Internal_.create ~switch () in
   Switch.Internal_.add_child switch (Any_fiber fiber);
@@ -165,6 +179,7 @@ let run_task (self : t) (task : task) : unit =
       ED.continue k x)
 
 let run_iteration (self : t) : unit =
+  check_active_ self;
   Lock.with_ self.outside_q (fun q -> Queue.transfer q self.task_q);
   self.tick_start_ns <- Time.monotonic_time_ns ();
 

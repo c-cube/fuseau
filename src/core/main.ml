@@ -6,7 +6,7 @@ type t = {
 }
 
 let with_scheduler_ (sched : Scheduler.t) f =
-  let r = TLS.get Scheduler.Private.k_current_scheduler in
+  let r = TLS.get Scheduler.Internal_.k_current_scheduler in
   let old = !r in
   r := Some sched;
   Fun.protect ~finally:(fun () -> r := old) f
@@ -20,7 +20,7 @@ let main_loop_ (self : t) : unit =
        we might get new fibers to run *)
     Event_loop.one_step self.ev_loop ~block:false ();
 
-    let sched_active = Scheduler.Private.has_pending_tasks self.sched in
+    let sched_active = Scheduler.Internal_.has_pending_tasks self.sched in
     let ev_loop_active = Event_loop.has_pending_tasks self.ev_loop in
     match sched_active, ev_loop_active with
     | true, _ -> () (* continue *)

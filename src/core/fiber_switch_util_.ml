@@ -1,3 +1,5 @@
+(** Internal utilities, not exposed to the user *)
+
 open Common_
 open Types
 module FM = Fiber_handle.Map
@@ -39,18 +41,31 @@ let[@inline] perform_suspend ~before_suspend =
 
 let rec cancel_switch (self : switch) ebt : unit =
   let new_st = Cancelled ebt in
-  match A.get self.state with
-  | Active { children } as old ->
-    if A.compare_and_set self.state old new_st then
-      cancel_children ~children ebt
-    else
-      cancel_switch self ebt
-  | _ -> ()
+  while
+    match A.get self.state with
+    | Active { children } as old ->
+      if A.compare_and_set self.state old new_st then (
+        (* cancel children *)
+        cancel_children_and_wait ~children ebt;
 
-and cancel_children ebt ~children : unit =
-  let n_waiting = A.make (FM.cardinal children) in
+        (* cancel parent if needed *)
+        (match self.parent with
+        | Some p when self.propagate_cancel_to_parent -> cancel_switch p ebt
+        | _ -> ());
 
-  if A.get n_waiting > 0 then
+        false
+      ) else
+        true
+    | _ -> false
+  do
+    ()
+  done
+
+and cancel_children_and_wait ebt ~children : unit =
+  let n_children = FM.cardinal children in
+
+  if n_children > 0 then (
+    let n_waiting = A.make (FM.cardinal children) in
     perform_suspend ~before_suspend:(fun ~wakeup ->
         (* wait for all children to be done *)
         let on_child_finish (_ : _ result) =
@@ -61,7 +76,8 @@ and cancel_children ebt ~children : unit =
         FM.iter (fun _ (Any_fiber f) -> cancel_switch f.switch ebt) children;
         FM.iter (fun _ (Any_fiber f) -> on_res_fiber f on_child_finish) children);
 
-  ()
+    ()
+  )
 
 let fail_fiber (self : _ fiber) ebt : unit =
   let new_st = Fail ebt in
