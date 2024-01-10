@@ -24,4 +24,5 @@ val update_map : 'a t -> ('a -> 'a * 'b) -> 'b
 val map : ('a -> 'b) -> 'a t -> 'b
 
 val map_no_exn : ('a -> 'b) -> 'a t -> 'b
-(** Like {!map} but the function cannot raise *)
+(** Like {!map} but the function cannot raise.
+    If the function raise the behavior is unspecified. *)

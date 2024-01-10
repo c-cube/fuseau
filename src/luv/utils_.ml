@@ -1,5 +1,3 @@
-let ( let@ ) = ( @@ )
-
 let get_cur_luv_loop () =
   Event_loop.Private.get_current_exn () |> Event_loop.loop
 

@@ -17,18 +17,16 @@
 
 (package
  (name fuseau)
- (synopsis "An IO and concurrency library built on picos+libuv")
+ (synopsis "A simple IO and concurrency library for OCaml 5")
  (depends
   (ocaml
    (>= 5.0))
   dune
-  luv
-  picos
+  (mtime
+   (>= 2.0))
   thread-local-storage
-  (cstruct
-   (>= 6.0))
   atomic)
  (tags
-  (libuv await effects event-loop thread-local-storage)))
+  (await effects event-loop thread-local-storage)))
 
 ; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project
