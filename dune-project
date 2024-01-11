@@ -25,8 +25,9 @@
   dune
   (mtime
    (>= 2.0))
-  thread-local-storage
-  atomic)
+  trace
+  (trace-tef :with-test)
+  thread-local-storage)
  (tags
   (await effects event-loop thread-local-storage)))
 
