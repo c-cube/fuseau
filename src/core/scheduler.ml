@@ -7,14 +7,13 @@ type task =
   | T_cont : Fiber.any * ('a, unit) ED.continuation * 'a -> task
 
 type t = {
-  active: bool Atomic.t;
+  root_fiber: Fiber.any;  (** Fiber encompassing all other *)
   ev_loop: Event_loop.t;
   mutable cur_fiber: Fiber.any option;  (** Currently running fiber *)
   task_q: task Queue.t;  (** Queue of regular tasks *)
   micro_tasks_q: microtask Queue.t;  (** Microtasks, run almost immediately *)
   outside_q: task Queue.t Lock.t;
       (** Queue of tasks from the outside (from other threads possibly) *)
-  root_switch: Switch.t;  (** Switch for root fibers *)
   mutable n_tasks: int;  (** Total number of tasks processed since the start *)
   max_tick_duration_us: int;
       (** Maximum duration of the compute part of a tick *)
@@ -38,7 +37,8 @@ let () =
 exception Inactive
 
 let[@inline] check_active_ (self : t) =
-  if not (A.get self.active) then raise Inactive
+  let (Any_fiber f) = self.root_fiber in
+  if Fiber.is_done f then raise Inactive
 
 let[@inline] schedule_ (self : t) (task : task) : unit =
   check_active_ self;
@@ -48,7 +48,10 @@ let[@inline] schedule_micro_task_ (self : t) f : unit =
   check_active_ self;
   Queue.push f self.micro_tasks_q
 
-let[@inline] active self = Atomic.get self.active
+let[@inline] active self =
+  let (Any_fiber f) = self.root_fiber in
+  not (Fiber.is_done f)
+
 let[@inline] n_tasks_since_beginning self = self.n_tasks
 
 let[@inline] has_pending_tasks self : bool =
@@ -68,9 +71,8 @@ let create ?(max_tick_duration_us = _default_max_tick_duration_us) ~ev_loop () :
   {
     ev_loop;
     cur_fiber = None;
-    active = Atomic.make true;
     task_q = Queue.create ();
-    root_switch = Switch.create_root ();
+    root_fiber = Any_fiber (Fiber.Internal_.create ());
     micro_tasks_q = Queue.create ();
     outside_q = Lock.create @@ Queue.create ();
     n_tasks = 0;
@@ -79,11 +81,9 @@ let create ?(max_tick_duration_us = _default_max_tick_duration_us) ~ev_loop () :
   }
 
 let dispose (self : t) : unit =
-  if Atomic.exchange self.active false then (
-    (* cancel the main task *)
-    let ebt = Exn_bt.get_callstack 15 Exit in
-    Switch.cancel self.root_switch ebt
-  )
+  (* cancel the main task *)
+  let ebt = Exn_bt.get_callstack 15 Exit in
+  Fiber.Internal_.cancel_any self.root_fiber ebt
 
 (** Has the work quota for the current iteration expired? *)
 let tick_is_expired_ (self : t) : bool =
@@ -108,45 +108,45 @@ let spawn ?(propagate_cancel_to_parent = true) (f : unit -> 'a) : 'a Fiber.t =
   check_active_ self;
 
   (* build a switch for the fiber *)
-  let parent =
-    match Option.map Fiber.switch_any self.cur_fiber with
-    | None -> self.root_switch
+  let (Any_fiber parent) =
+    match self.cur_fiber with
+    | None -> self.root_fiber
     | Some s -> s
   in
 
-  let switch =
-    if propagate_cancel_to_parent then
-      (* directly run in the parent, why not *)
-      parent
-    else
-      Switch.create_sub ~parent ~propagate_cancel_to_parent ()
-  in
+  let fiber = Fiber.Internal_.create () in
+  Fiber.Internal_.add_child
+    ~protected:(not propagate_cancel_to_parent)
+    parent fiber;
+  schedule_ self (T_start (fiber, f));
+  fiber
 
-  let fiber = Fiber.Internal_.create ~switch () in
-  Switch.Internal_.add_child switch (Any_fiber fiber);
+let spawn_as_child_of ?(propagate_cancel_to_parent = true) (self : t)
+    (parent : _ Fiber.t) f : _ Fiber.t =
+  check_active_ self;
+  let fiber = Fiber.Internal_.create () in
+  Fiber.Internal_.add_child
+    ~protected:(not propagate_cancel_to_parent)
+    parent fiber;
   schedule_ self (T_start (fiber, f));
   fiber
 
 let spawn_from_anywhere (self : t) f : _ Fiber.t =
   check_active_ self;
-  let switch = self.root_switch in
-  let fiber = Fiber.Internal_.create ~switch () in
-  Switch.Internal_.add_child switch (Any_fiber fiber);
+  let (Any_fiber parent) = self.root_fiber in
+  let fiber = Fiber.Internal_.create () in
+  Fiber.Internal_.add_child ~protected:true parent fiber;
   Lock.with_ self.outside_q (fun q -> Queue.push (T_start (fiber, f)) q);
   fiber
 
 (** call [f()] and resolve the fiber once [f()] is done *)
 let run_task_and_resolve_fiber fiber f =
-  (try
-     let r = f () in
-     Fiber.Internal_.resolve fiber r
-   with e ->
-     let bt = Printexc.get_raw_backtrace () in
-     Fiber.Internal_.cancel fiber (Exn_bt.make e bt));
-
-  (* make sure we remove the fiber from the switch *)
-  let switch = Fiber.switch fiber in
-  Switch.Internal_.remove_child switch (Any_fiber fiber)
+  try
+    let r = f () in
+    Fiber.Internal_.resolve fiber r
+  with e ->
+    let bt = Printexc.get_raw_backtrace () in
+    Fiber.Internal_.cancel fiber (Exn_bt.make e bt)
 
 let run_task (self : t) (task : task) : unit =
   match task with

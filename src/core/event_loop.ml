@@ -5,6 +5,9 @@ open Common_
 type event_handle = { cancel: unit -> unit } [@@unboxed]
 (** An event handle, so we can cancel events *)
 
+(* FIXME: a special method to wakeup from the outside (thread safe).
+   E.g. use a hidden FD, like a pipe, and write a byte to it. *)
+
 (** Abstract event loop, inspired by Lwt engine *)
 class type t =
   object

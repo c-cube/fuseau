@@ -7,7 +7,6 @@
 
 (** {2 Foundations} *)
 
-module Switch = Switch
 module Fiber = Fiber
 module Fiber_handle = Fiber_handle
 module Main = Main

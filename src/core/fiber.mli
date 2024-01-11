@@ -17,27 +17,46 @@ type 'a callback = 'a Exn_bt.result -> unit
 type 'a state = 'a Types.fiber_status =
   | Done of 'a
   | Fail of Exn_bt.t
-  | Wait of { waiters: 'a callback list }
+  | Wait of {
+      waiters: 'a callback list;
+      children: any Fiber_handle.Map.t;
+    }
 
 val peek : 'a t -> 'a state
-val await : 'a t -> 'a
 val is_cancelled : _ t -> bool
-val switch : _ t -> Types.switch
-val switch_any : any -> Types.switch
+val is_done : _ t -> bool
+
+exception Cancelled of Exn_bt.t
+(** Exception for fibers that are cancelled. Polling points such
+    as {!yield} and {!await} will raise this if the fiber has been cancelled. *)
+
+val yield : unit -> unit
+(** [yield ()] returns control to the scheduler and checks for
+    cancellation. *)
+
+val await : 'a t -> 'a
+(** Wait for the fiber to terminate, and return the result.
+    If the fiber failed, this re-raises the exception.
+
+    This must be called from inside another fiber, which will be
+    suspended if needed. *)
 
 (* val try_await : 'a t -> 'a Exn_bt.result *)
 
 val on_res : 'a t -> 'a callback -> unit
 (** Wait for fiber to be done and call the callback
-    with the result. *)
+    with the result. If the fiber is done already then the
+    callback is invoked immediately with its result. *)
 
 (**/**)
 
 module Internal_ : sig
-  val create : switch:Types.switch -> unit -> 'a t
+  val create : unit -> 'a t
   val resolve : 'a t -> 'a -> unit
   val cancel : _ t -> Exn_bt.t -> unit
+  val cancel_any : any -> Exn_bt.t -> unit
   val get_current : (unit -> any option) ref
+  val add_child : protected:bool -> _ t -> _ t -> unit
 
   val suspend : before_suspend:(wakeup:(unit -> unit) -> unit) -> unit
   (** [suspend ~before_suspend] first calls [before_suspend] with a wakeup
