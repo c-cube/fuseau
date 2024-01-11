@@ -1,14 +1,14 @@
 open Common_
 
-type time_ns = int64
-type duration_ns = int64
+type instant_s = float
+type duration_s = float
 
 type kind =
   | Once
-  | Every of duration_ns
+  | Every of duration_s
 
 type task = {
-  mutable deadline: time_ns;
+  mutable deadline: instant_s;
   mutable active: bool;
   f: event_handle -> unit;
   as_event_handle: event_handle;
@@ -24,7 +24,7 @@ end)
 type t = { mutable tasks: Task_heap.t }
 
 (** accepted time diff for actions. *)
-let epsilon_ns = 5_000L
+let epsilon_s = 0.000_005
 
 type tick_res =
   | Wait of float
@@ -39,8 +39,8 @@ let[@inline] pop_task_ self : unit =
   self.tasks <- tasks
 
 let run_after self delay f : event_handle =
-  let now = Time.monotonic_time_ns () in
-  let deadline = Int64.(add now (mul (Int64.of_float delay) 1_000_000_000L)) in
+  let now = Time.monotonic_time_s () in
+  let deadline = now +. delay in
   let rec task =
     {
       deadline;
@@ -54,14 +54,13 @@ let run_after self delay f : event_handle =
   task.as_event_handle
 
 let run_every self delay f : event_handle =
-  let dur_ns = Int64.(mul (of_float delay) 1_000_000_000L) in
-  let now = Time.monotonic_time_ns () in
-  let deadline = Int64.(add now dur_ns) in
+  let now = Time.monotonic_time_s () in
+  let deadline = now +. delay in
   let rec task =
     {
       deadline;
       f;
-      kind = Every dur_ns;
+      kind = Every delay;
       active = true;
       as_event_handle = { cancel = (fun () -> task.active <- false) };
     }
@@ -76,23 +75,21 @@ let rec next (self : t) : tick_res =
     pop_task_ self;
     next self
   | Some task ->
-    let now = Time.monotonic_time_ns () in
+    let now = Time.monotonic_time_s () in
 
-    let remaining_time = Int64.(sub task.deadline now) in
-    if remaining_time <= epsilon_ns then (
+    let remaining_time_s = task.deadline -. now in
+    if remaining_time_s <= epsilon_s then (
       pop_task_ self;
 
       (match task.kind with
       | Once -> ()
       | Every dur ->
         (* schedule the next iteration *)
-        task.deadline <- Int64.(add now dur);
+        task.deadline <- now +. dur;
         self.tasks <- Task_heap.insert task self.tasks);
 
       Run (task.f, task.as_event_handle)
-    ) else (
-      let remaining_time_s = Int64.to_float remaining_time *. 1e-9 in
+    ) else
       Wait remaining_time_s
-    )
 
 let create () = { tasks = Task_heap.empty }

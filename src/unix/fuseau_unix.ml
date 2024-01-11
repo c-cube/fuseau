@@ -30,6 +30,8 @@ module Per_fd = struct
     mutable reads: IO_wait.t list;
     mutable writes: IO_wait.t list;
   }
+
+  let[@inline] is_empty self = self.reads = [] && self.writes = []
 end
 
 module IO_tbl = struct
@@ -63,17 +65,14 @@ module IO_tbl = struct
     let writes = ref [] in
     Hashtbl.iter
       (fun _ (per_fd : Per_fd.t) ->
-        if per_fd.reads <> [] then reads := per_fd.fd :: !reads;
-        if per_fd.writes <> [] then writes := per_fd.fd :: !writes)
+        if Per_fd.is_empty per_fd then
+          Hashtbl.remove self.tbl per_fd.fd
+        else (
+          if per_fd.reads <> [] then reads := per_fd.fd :: !reads;
+          if per_fd.writes <> [] then writes := per_fd.fd :: !writes
+        ))
       self.tbl;
     !reads, !writes
-
-  let filter_empty_ (self : t) : unit =
-    Hashtbl.iter
-      (fun fd (per_fd : Per_fd.t) ->
-        if per_fd.reads = [] && per_fd.writes = [] then
-          Hashtbl.remove self.tbl fd)
-      self.tbl
 
   let trigger_waiter (io : IO_wait.t) =
     if io.active then io.f io.as_event_handle
@@ -95,9 +94,6 @@ module IO_tbl = struct
         self.n_write <- self.n_write - List.length per_fd.writes;
         per_fd.writes <- [])
       writes;
-
-    (* TODO: gather intersection of reads/writes? *)
-    filter_empty_ self;
     ()
 end
 
