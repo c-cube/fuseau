@@ -109,7 +109,7 @@ let spawn ?(propagate_cancel_to_parent = true) (f : unit -> 'a) : 'a Fiber.t =
 
   (* build a switch for the fiber *)
   let parent =
-    match Option.map Fiber.Internal_.switch_any self.cur_fiber with
+    match Option.map Fiber.switch_any self.cur_fiber with
     | None -> self.root_switch
     | Some s -> s
   in
@@ -135,23 +135,22 @@ let spawn_from_anywhere (self : t) f : _ Fiber.t =
   Lock.with_ self.outside_q (fun q -> Queue.push (T_start (fiber, f)) q);
   fiber
 
+(** call [f()] and resolve the fiber once [f()] is done *)
+let run_task_and_resolve_fiber fiber f =
+  (try
+     let r = f () in
+     Fiber.Internal_.resolve fiber r
+   with e ->
+     let bt = Printexc.get_raw_backtrace () in
+     Fiber.Internal_.cancel fiber (Exn_bt.make e bt));
+
+  (* make sure we remove the fiber from the switch *)
+  let switch = Fiber.switch fiber in
+  Switch.Internal_.remove_child switch (Any_fiber fiber)
+
 let run_task (self : t) (task : task) : unit =
   match task with
   | T_start (fiber, f) ->
-    (* call [f()] and resolve the fiber *)
-    let run_task_and_resolve_fiber f =
-      (try
-         let r = f () in
-         Fiber.Internal_.resolve fiber r
-       with e ->
-         let bt = Printexc.get_raw_backtrace () in
-         Fiber.Internal_.cancel fiber (Exn_bt.make e bt));
-
-      (* make sure we remove the fiber from the switch *)
-      let switch = Fiber.Internal_.switch fiber in
-      Switch.Internal_.remove_child switch (Any_fiber fiber)
-    in
-
     (* the main effect handler *)
     let effc : type b. b Effect.t -> ((b, unit) ED.continuation -> 'a) option =
       function
@@ -166,7 +165,7 @@ let run_task (self : t) (task : task) : unit =
     in
 
     (* whole fiber runs under the effect handler *)
-    ED.try_with run_task_and_resolve_fiber f { ED.effc }
+    ED.try_with (run_task_and_resolve_fiber fiber) f { ED.effc }
   | T_cont ((Any_fiber fib as any_fib), k, x) ->
     (match Fiber.peek fib with
     | Fail ebt ->

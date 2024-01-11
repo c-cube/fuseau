@@ -35,6 +35,11 @@ let create_sub ~parent ~propagate_cancel_to_parent () =
 
 let cancel = Fiber_switch_util_.cancel_switch
 
+let[@inline] is_done self =
+  match A.get self.state with
+  | Done -> true
+  | _ -> false
+
 module Internal_ = struct
   let add_child = Fiber_switch_util_.add_child_to_switch
   let remove_child = Fiber_switch_util_.remove_child_from_switch

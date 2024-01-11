@@ -19,6 +19,7 @@ val create_sub : parent:t -> propagate_cancel_to_parent:bool -> unit -> t
     will also cancel its parent. If [false], failure is contained. *)
 
 val cancel : t -> Exn_bt.t -> unit
+val is_done : t -> bool
 
 exception Cancel
 (** Exception raised in case a switch is cancelled.

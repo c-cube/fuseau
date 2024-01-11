@@ -12,6 +12,8 @@ type any = Types.any_fiber = Any_fiber : _ t -> any [@@unboxed]
 
 let on_res = Fiber_switch_util_.on_res_fiber
 let[@inline] peek self = A.get self.state
+let[@inline] switch self = self.switch
+let[@inline] switch_any (Any_fiber f) = f.switch
 
 let is_cancelled self =
   match peek self with
@@ -25,8 +27,6 @@ module Internal_ = struct
 
   let resolve = Fiber_switch_util_.resolve_fiber
   let cancel = Fiber_switch_util_.fail_fiber
-  let[@inline] switch self = self.switch
-  let[@inline] switch_any (Any_fiber f) = f.switch
   let suspend = Fiber_switch_util_.perform_suspend
 
   (** A helper to get around circular dependencies. This is implemented via

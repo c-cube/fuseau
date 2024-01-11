@@ -22,6 +22,8 @@ type 'a state = 'a Types.fiber_status =
 val peek : 'a t -> 'a state
 val await : 'a t -> 'a
 val is_cancelled : _ t -> bool
+val switch : _ t -> Types.switch
+val switch_any : any -> Types.switch
 
 (* val try_await : 'a t -> 'a Exn_bt.result *)
 
@@ -36,8 +38,6 @@ module Internal_ : sig
   val resolve : 'a t -> 'a -> unit
   val cancel : _ t -> Exn_bt.t -> unit
   val get_current : (unit -> any option) ref
-  val switch : _ t -> Types.switch
-  val switch_any : any -> Types.switch
 
   val suspend : before_suspend:(wakeup:(unit -> unit) -> unit) -> unit
   (** [suspend ~before_suspend] first calls [before_suspend] with a wakeup

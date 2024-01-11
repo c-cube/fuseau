@@ -39,19 +39,51 @@ let resolve_fiber (self : _ fiber) r : unit =
 let[@inline] perform_suspend ~before_suspend =
   Effect.perform @@ Effects.Suspend { before_suspend }
 
+(** Call waiters with [res] once all [children] are done *)
+let call_waiters_once_children_are_done ~children ~waiters (res : _ result) :
+    unit =
+  let call_waiters () =
+    List.iter (fun (w : switch_callback) -> w res) waiters
+  in
+
+  let n_children = FM.cardinal children in
+  if n_children > 0 then (
+    let n_waiting = A.make (FM.cardinal children) in
+    (* wait for all children to be done *)
+    let on_child_finish (_ : _ result) =
+      (* if we're the last to finish, wakeup the parent call *)
+      if A.fetch_and_add n_waiting (-1) = 1 then call_waiters ()
+    in
+    FM.iter (fun _ (Any_fiber f) -> on_res_fiber f on_child_finish) children
+  ) else
+    call_waiters ()
+
+let switch_is_done (self : switch) : unit =
+  while
+    let old = A.get self.state in
+    match old with
+    | Done | Cancelled _ -> false
+    | Active { waiters; children } ->
+      if A.compare_and_set self.state old Done then (
+        call_waiters_once_children_are_done ~children ~waiters (Ok ());
+        false
+      ) else
+        true
+  do
+    ()
+  done
+
 let rec cancel_switch (self : switch) ebt : unit =
   let new_st = Cancelled ebt in
   while
     match A.get self.state with
-    | Active { children } as old ->
+    | Active { children; waiters } as old ->
       if A.compare_and_set self.state old new_st then (
         (* cancel children *)
-        cancel_children_and_wait ~children ebt;
+        cancel_children ~children ebt;
 
-        (* cancel parent if needed *)
-        (match self.parent with
-        | Some p when self.propagate_cancel_to_parent -> cancel_switch p ebt
-        | _ -> ());
+        (* once all children are done, call waiters *)
+        call_waiters_once_children_are_done ~children ~waiters (Error ebt);
 
         false
       ) else
@@ -61,37 +93,20 @@ let rec cancel_switch (self : switch) ebt : unit =
     ()
   done
 
-and cancel_children_and_wait ebt ~children : unit =
-  let n_children = FM.cardinal children in
-
-  if n_children > 0 then (
-    let n_waiting = A.make (FM.cardinal children) in
-    perform_suspend ~before_suspend:(fun ~wakeup ->
-        (* wait for all children to be done *)
-        let on_child_finish (_ : _ result) =
-          (* if we're the last to finish, wakeup the parent call *)
-          if A.fetch_and_add n_waiting (-1) = 1 then wakeup ()
-        in
-
-        FM.iter (fun _ (Any_fiber f) -> cancel_switch f.switch ebt) children;
-        FM.iter (fun _ (Any_fiber f) -> on_res_fiber f on_child_finish) children);
-
-    ()
-  )
+(** Cancel eagerly all children *)
+and cancel_children ebt ~children : unit =
+  FM.iter (fun _ (Any_fiber f) -> cancel_switch f.switch ebt) children
 
 let fail_fiber (self : _ fiber) ebt : unit =
   let new_st = Fail ebt in
   let cbs = ref [] in
-  let do_cancel = ref false in
 
   while
     match A.get self.state with
     | Wait { waiters = l } as old ->
-      if A.compare_and_set self.state old new_st then (
-        cbs := l;
-        do_cancel := true;
+      if A.compare_and_set self.state old new_st then
         false
-      ) else
+      else
         true
     | Done _ | Fail _ -> false
   do
