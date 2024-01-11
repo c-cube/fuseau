@@ -12,8 +12,10 @@ let with_scheduler_ (sched : Scheduler.t) f =
   Fun.protect ~finally:(fun () -> r := old) f
 
 let main_loop_ (self : t) : unit =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau.main" in
   let continue = ref true in
   while !continue do
+    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau.iter" in
     Scheduler.run_iteration self.sched;
 
     (* run a step of libuv polling, but without waiting because
@@ -23,10 +25,12 @@ let main_loop_ (self : t) : unit =
     let sched_active = Scheduler.Internal_.has_pending_tasks self.sched in
     let ev_loop_active = Event_loop.has_pending_tasks self.ev_loop in
     match sched_active, ev_loop_active with
-    | true, _ -> () (* continue *)
+    | true, _ ->
+      Trace.message "sched active";
+      () (* continue *)
     | false, true ->
       (* run a step of libuv polling + waiting *)
-      print_endline "run once!";
+      Trace.message "run evloop block=true";
 
       (* TODO:
          (* create an async to allow external [spawn] to wake us up *)
@@ -49,18 +53,18 @@ let main ?max_tick_duration_us ~loop:ev_loop (main : unit -> 'a) : 'a =
   let sched = Scheduler.create ?max_tick_duration_us ~ev_loop () in
   let self = { sched; ev_loop } in
 
-  let res = ref None in
-
   (* run the loop that interleaves scheduler and Libuv steps *)
-  (let@ () = with_scheduler_ self.sched in
+  let fiber =
+    let@ () = with_scheduler_ self.sched in
 
-   (* run main task *)
-   let fib = Scheduler.spawn ~propagate_cancel_to_parent:false main in
-   Fiber.on_res fib (fun r -> res := Some r);
+    (* run main task *)
+    let fib = Scheduler.spawn ~propagate_cancel_to_parent:true main in
 
-   main_loop_ self);
+    main_loop_ self;
+    fib
+  in
 
-  match !res with
-  | None -> assert false (* should not have stopped *)
-  | Some (Ok x) -> x
-  | Some (Error ebt) -> Exn_bt.raise ebt
+  match Fiber.peek fiber with
+  | Wait _ -> assert false (* should not have stopped *)
+  | Done x -> x
+  | Fail ebt -> Exn_bt.raise ebt

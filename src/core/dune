@@ -2,6 +2,5 @@
 (library
  (name fuseau_core)
  (public_name fuseau.core)
- (private_modules common_)
  (synopsis "Core types for the scheduler of fuseau")
- (libraries thread-local-storage cstruct atomic unix mtime mtime.clock.os))
+ (libraries thread-local-storage trace unix mtime mtime.clock.os))

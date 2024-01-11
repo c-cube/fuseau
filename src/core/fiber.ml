@@ -138,6 +138,8 @@ let add_child ~protected (self : _ fiber) (child : _ fiber) =
     ()
   done
 
+exception Cancelled of Exn_bt.t
+
 module Internal_ = struct
   let create () =
     let id = Fiber_handle.fresh () in
@@ -165,8 +167,6 @@ let[@inline] get_exn_ self =
   | Done x -> x
   | Fail ebt -> Exn_bt.raise ebt
   | Wait _ -> assert false
-
-exception Cancelled of Exn_bt.t
 
 let await self =
   match peek self with

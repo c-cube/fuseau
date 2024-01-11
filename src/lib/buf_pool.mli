@@ -8,11 +8,11 @@ type t
 val create : ?buf_size:int -> ?max_size:int -> unit -> t
 (** Create a pool *)
 
-val acquire : t -> Cstruct.t
+val acquire : t -> bytes
 (** Take a buffer from the pool. Once done with it, the buffer
     should be {!recycle}'d. *)
 
-val recycle : t -> Cstruct.t -> unit
+val recycle : t -> bytes -> unit
 (** Give a buffer back to the pool. *)
 
-val with_buf : t -> (Cstruct.t -> 'a) -> 'a
+val with_buf : t -> (bytes -> 'a) -> 'a

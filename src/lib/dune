@@ -1,0 +1,8 @@
+
+
+(library
+ (name fuseau)
+ (public_name fuseau)
+ (synopsis "Main library for fuseau")
+ (private_modules common_)
+ (libraries thread-local-storage unix fuseau.core))

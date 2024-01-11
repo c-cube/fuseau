@@ -41,6 +41,7 @@ let[@inline] check_active_ (self : t) =
   if Fiber.is_done f then raise Inactive
 
 let[@inline] schedule_ (self : t) (task : task) : unit =
+  Trace.message "schedule";
   check_active_ self;
   Queue.push task self.task_q
 
@@ -55,6 +56,10 @@ let[@inline] active self =
 let[@inline] n_tasks_since_beginning self = self.n_tasks
 
 let[@inline] has_pending_tasks self : bool =
+  Trace.messagef (fun k ->
+      k "taskq.len=%d, microtask.len=%d" (Queue.length self.task_q)
+        (Queue.length self.micro_tasks_q));
+
   not
     (Queue.is_empty self.task_q
     && Queue.is_empty self.micro_tasks_q
@@ -88,10 +93,12 @@ let dispose (self : t) : unit =
 (** Has the work quota for the current iteration expired? *)
 let tick_is_expired_ (self : t) : bool =
   let now = Time.monotonic_time_ns () in
-  let open! Int64 in
-  compare now
-    (add self.tick_start_ns (mul 1000L (of_int self.max_tick_duration_us)))
-  < 0
+
+  let deadline =
+    let open! Int64 in
+    add self.tick_start_ns (mul 1000L (of_int self.max_tick_duration_us))
+  in
+  now > deadline
 
 (** Scheduler for the current thread *)
 let[@inline] get_sched_for_cur_thread_ () : t =
@@ -149,6 +156,7 @@ let run_task_and_resolve_fiber fiber f =
     Fiber.Internal_.cancel fiber (Exn_bt.make e bt)
 
 let run_task (self : t) (task : task) : unit =
+  Trace.message "sched.run-task";
   match task with
   | T_start (fiber, f) ->
     (* the main effect handler *)
@@ -157,7 +165,10 @@ let run_task (self : t) (task : task) : unit =
       | Effects.Suspend { before_suspend } ->
         Some
           (fun k ->
-            let wakeup () = schedule_ self (T_cont (Any_fiber fiber, k, ())) in
+            let wakeup () =
+              Trace.message "wakeup suspended fiber";
+              schedule_ self (T_cont (Any_fiber fiber, k, ()))
+            in
             before_suspend ~wakeup)
       | Effects.Yield ->
         Some (fun k -> schedule_ self (T_cont (Any_fiber fiber, k, ())))
@@ -178,12 +189,14 @@ let run_task (self : t) (task : task) : unit =
       ED.continue k x)
 
 let run_iteration (self : t) : unit =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "sched.run_iteration" in
   check_active_ self;
   Lock.with_ self.outside_q (fun q -> Queue.transfer q self.task_q);
   self.tick_start_ns <- Time.monotonic_time_ns ();
 
   let continue = ref true in
   while !continue do
+    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "sched.iter" in
     (* run microtasks *)
     while not (Queue.is_empty self.micro_tasks_q) do
       let f = Queue.pop self.micro_tasks_q in
@@ -197,6 +210,8 @@ let run_iteration (self : t) : unit =
     else (
       let task = Queue.pop self.task_q in
       self.n_tasks <- 1 + self.n_tasks;
+
+      Trace.counter_int "n_tasks" self.n_tasks;
 
       run_task self task;
       (* cleanup *)

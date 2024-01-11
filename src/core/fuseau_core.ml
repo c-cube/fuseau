@@ -14,11 +14,11 @@ module FLS = FLS
 
 (** {2 IO event loop} *)
 
+module Scheduler = Scheduler
 module Event_loop = Event_loop
 
 (** {2 Resource management *)
 
-module Buf_pool = Buf_pool
 module Resource_pool = Resource_pool
 
 (** {2 Utils} *)
