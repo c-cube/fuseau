@@ -3,5 +3,5 @@
   (name fuseau_unix)
   (public_name fuseau.unix)
   (synopsis "Basic event loop for Fuseau based on Unix+select")
-  (flags :standard -open Fuseau_core)
-  (libraries unix fuseau.core))
+  (flags :standard -open Fuseau)
+  (libraries unix fuseau trace))

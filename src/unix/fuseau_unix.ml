@@ -1,3 +1,5 @@
+open Common_
+
 type event_handle = Event_loop.event_handle = { cancel: unit -> unit }
 [@@unboxed]
 
@@ -119,6 +121,7 @@ class ev_loop : Event_loop.t =
   object
     (* val read_ : (event_handle -> unit) Int_tbl.t = Int_tbl.create 32 *)
     method one_step ~block () : unit =
+      let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau.unix.one-step" in
       let delay = run_timer_ _timer in
 
       let delay =
@@ -130,7 +133,11 @@ class ev_loop : Event_loop.t =
       in
 
       let reads, writes = IO_tbl.prepare_select _io_wait in
-      if reads <> [] || writes <> [] then (
+      if reads <> [] || writes <> [] || Timer.has_tasks _timer then (
+        Trace.messagef (fun k ->
+            k "select %d reads, %d writes, delay=%.3f" (List.length reads)
+              (List.length writes) delay);
+
         let reads, writes, _ = Unix.select reads writes [] delay in
         IO_tbl.handle_ready _io_wait reads writes
       );
@@ -154,9 +161,9 @@ class ev_loop : Event_loop.t =
         : float -> repeat:bool -> (event_handle -> unit) -> event_handle =
       fun delay ~repeat f ->
         if repeat then
-          Timer.run_after _timer delay f
-        else
           Timer.run_every _timer delay f
+        else
+          Timer.run_after _timer delay f
 
     (* TODO: remove?? *)
     method fake_io : Unix.file_descr -> unit = assert false
