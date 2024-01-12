@@ -41,7 +41,7 @@ val await : 'a t -> 'a
     This must be called from inside another fiber, which will be
     suspended if needed. *)
 
-(* val try_await : 'a t -> 'a Exn_bt.result *)
+val try_await : 'a t -> 'a Exn_bt.result
 
 val on_res : 'a t -> 'a callback -> unit
 (** Wait for fiber to be done and call the callback

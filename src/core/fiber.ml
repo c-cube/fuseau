@@ -81,6 +81,7 @@ let resolve (self : 'a t) (r : 'a) : unit =
 
 let rec fail_fiber : type a. a t -> Exn_bt.t -> unit =
  fun self ebt ->
+  Trace.messagef (fun k -> k "fail fiber[%d]" (self.id :> int));
   let new_st = Fail ebt in
   while
     match A.get self.state with
@@ -102,6 +103,10 @@ and cancel_children ebt ~children : unit =
   FM.iter (fun _ (Any_fiber f) -> fail_fiber f ebt) children
 
 let remove_child (self : _ t) (child : _ t) =
+  Trace.messagef (fun k ->
+      k "remove child fiber[%d] from fiber[%d]"
+        (child.id :> int)
+        (self.id :> int));
   while
     match A.get self.state with
     | Wait { children; waiters } as old ->
@@ -115,6 +120,8 @@ let remove_child (self : _ t) (child : _ t) =
 (** Add a child to [self].
     @param protected if true, the child's failure will not affect [self]. *)
 let add_child ~protected (self : _ fiber) (child : _ fiber) =
+  Trace.messagef (fun k ->
+      k "add child fiber[%d] to fiber[%d]" (child.id :> int) (self.id :> int));
   while
     match A.get self.state with
     | Wait { children; waiters } as old ->
@@ -166,12 +173,37 @@ let[@inline] get_exn_ self =
   match A.get self.state with
   | Done x -> x
   | Fail ebt -> Exn_bt.raise ebt
-  | Wait _ -> assert false
+  | Wait _ ->
+    Trace.message "fiber.getexn";
+    assert false
 
 let await self =
   match peek self with
   | Done x -> x
   | Fail ebt -> Exn_bt.raise ebt
+  | Wait _ ->
+    (* polling point *)
+    (match !Internal_.get_current () with
+    | None ->
+      Trace.message "await outside of fiber";
+      failwith "`await` must be called from inside a fiber"
+    | Some (Any_fiber f) ->
+      (match A.get f.state with
+      | Fail ebt -> Exn_bt.raise ebt
+      | _ -> ()));
+
+    (* wait for resolution *)
+    Trace.messagef (fun k -> k "fiber[%d] suspends" (self.id :> int));
+    Effect.perform
+    @@ Effects.Suspend
+         { before_suspend = (fun ~wakeup -> on_res self (fun _ -> wakeup ())) };
+    Trace.messagef (fun k -> k "fiber[%d] awakes" (self.id :> int));
+    get_exn_ self
+
+let try_await self =
+  match peek self with
+  | Done x -> Ok x
+  | Fail ebt -> Error ebt
   | Wait _ ->
     (* polling point *)
     (match !Internal_.get_current () with
@@ -185,7 +217,11 @@ let await self =
     Effect.perform
     @@ Effects.Suspend
          { before_suspend = (fun ~wakeup -> on_res self (fun _ -> wakeup ())) };
-    get_exn_ self
+
+    (match A.get self.state with
+    | Done x -> Ok x
+    | Fail ebt -> Error ebt
+    | Wait _ -> assert false)
 
 let yield () =
   (* polling point *)

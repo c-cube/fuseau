@@ -56,10 +56,6 @@ let[@inline] active self =
 let[@inline] n_tasks_since_beginning self = self.n_tasks
 
 let[@inline] has_pending_tasks self : bool =
-  Trace.messagef (fun k ->
-      k "taskq.len=%d, microtask.len=%d" (Queue.length self.task_q)
-        (Queue.length self.micro_tasks_q));
-
   not
     (Queue.is_empty self.task_q
     && Queue.is_empty self.micro_tasks_q
@@ -93,7 +89,6 @@ let dispose (self : t) : unit =
 (** Has the work quota for the current iteration expired? *)
 let tick_is_expired_ (self : t) : bool =
   let now = Time.monotonic_time_ns () in
-
   let deadline =
     let open! Int64 in
     add self.tick_start_ns (mul 1000L (of_int self.max_tick_duration_us))
@@ -147,7 +142,8 @@ let spawn_from_anywhere (self : t) f : _ Fiber.t =
   fiber
 
 (** call [f()] and resolve the fiber once [f()] is done *)
-let run_task_and_resolve_fiber fiber f =
+let run_task_and_resolve_fiber (self : t) fiber f =
+  self.cur_fiber <- Some (Any_fiber fiber);
   try
     let r = f () in
     Fiber.Internal_.resolve fiber r
@@ -176,8 +172,9 @@ let run_task (self : t) (task : task) : unit =
     in
 
     (* whole fiber runs under the effect handler *)
-    ED.try_with (run_task_and_resolve_fiber fiber) f { ED.effc }
+    ED.try_with (run_task_and_resolve_fiber self fiber) f { ED.effc }
   | T_cont ((Any_fiber fib as any_fib), k, x) ->
+    self.cur_fiber <- Some any_fib;
     (match Fiber.peek fib with
     | Fail ebt ->
       (* cleanup *)
@@ -189,14 +186,20 @@ let run_task (self : t) (task : task) : unit =
       ED.continue k x)
 
 let run_iteration (self : t) : unit =
-  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "sched.run_iteration" in
+  let@ _sp =
+    Trace.with_span ~__FILE__ ~__LINE__ "sched.run_iteration" ~data:(fun () ->
+        [ "n-tasks", `Int (Queue.length self.task_q) ])
+  in
   check_active_ self;
   Lock.with_ self.outside_q (fun q -> Queue.transfer q self.task_q);
   self.tick_start_ns <- Time.monotonic_time_ns ();
 
   let continue = ref true in
+  let n = ref 0 in
+
   while !continue do
     let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "sched.iter" in
+
     (* run microtasks *)
     while not (Queue.is_empty self.micro_tasks_q) do
       let f = Queue.pop self.micro_tasks_q in
@@ -205,13 +208,14 @@ let run_iteration (self : t) : unit =
         Printf.eprintf "warning: microtask raised %s\n%!" (Printexc.to_string e)
     done;
 
-    if Queue.is_empty self.task_q || tick_is_expired_ self then
+    incr n;
+
+    if Queue.is_empty self.task_q || (!n mod 64 = 0 && tick_is_expired_ self)
+    then
       continue := false
     else (
       let task = Queue.pop self.task_q in
       self.n_tasks <- 1 + self.n_tasks;
-
-      Trace.counter_int "n_tasks" self.n_tasks;
 
       run_task self task;
       (* cleanup *)
