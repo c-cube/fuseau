@@ -25,4 +25,5 @@ let run () =
 let () =
   let@ () = Trace_tef.with_setup () in
   let n = run () in
+  pf "f2 returns\n%!";
   pf "res: %d\n" n
