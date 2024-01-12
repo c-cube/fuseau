@@ -2,8 +2,11 @@
 
 open Common_
 
-type event_handle = { cancel: unit -> unit } [@@unboxed]
+type event_handle = Event_loop_types.event
 (** An event handle, so we can cancel events *)
+
+type file_descr = Event_loop_types.file_descr
+(** File descriptors for input/output *)
 
 (* FIXME: a special method to wakeup from the outside (thread safe).
    E.g. use a hidden FD, like a pipe, and write a byte to it. *)
@@ -17,20 +20,18 @@ class type t =
         or until the next IO event occurs. If [false], this does not
         block and returns after having processed the available events. *)
 
-    method on_readable :
-      Unix.file_descr -> (event_handle -> unit) -> event_handle
+    method on_readable : file_descr -> (event_handle -> unit) -> event_handle
     (** [on_readable fd f] creates a new event [ev], and will run [f ev] when
       [fd] becomes readable *)
 
-    method on_writable :
-      Unix.file_descr -> (event_handle -> unit) -> event_handle
+    method on_writable : file_descr -> (event_handle -> unit) -> event_handle
 
     method on_timer :
       float -> repeat:bool -> (event_handle -> unit) -> event_handle
     (** [on_timer delay ~repeat f] runs [f] after [delay].
       @param repeat if true runs [f] every [delay] seconds *)
 
-    method fake_io : Unix.file_descr -> unit
+    method fake_io : file_descr -> unit
     (** Simulate activity on the FD *)
 
     method readable_count : int

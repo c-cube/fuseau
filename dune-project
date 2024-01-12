@@ -26,6 +26,7 @@
   (mtime
    (>= 2.0))
   trace
+  base-unix
   (trace-tef :with-test)
   thread-local-storage)
  (tags

@@ -1,0 +1,6 @@
+
+(library
+  (name fuseau_unix_types)
+  (public_name fuseau.unix.types)
+  (implements fuseau.core)
+  (libraries fuseau.core fuseau.unix unix))

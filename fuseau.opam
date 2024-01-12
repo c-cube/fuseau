@@ -12,6 +12,7 @@ depends: [
   "dune" {>= "2.9"}
   "mtime" {>= "2.0"}
   "trace"
+  "base-unix"
   "trace-tef" {with-test}
   "thread-local-storage"
   "odoc" {with-doc}

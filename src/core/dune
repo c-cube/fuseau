@@ -3,4 +3,5 @@
  (name fuseau_core)
  (public_name fuseau.core)
  (synopsis "Core types for the scheduler of fuseau")
- (libraries thread-local-storage trace unix mtime mtime.clock.os))
+ (virtual_modules event_loop_types)
+ (libraries thread-local-storage trace mtime mtime.clock.os))
