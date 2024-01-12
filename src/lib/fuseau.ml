@@ -25,9 +25,12 @@ module Lock = Fuseau_core.Lock
 
 (** {2 Re-exports} *)
 
+exception Timeout = Utils_.Timeout
+
 let spawn = Fuseau_core.spawn
 let spawn_from_anywhere = Fuseau_core.spawn_from_anywhere
 let await = Fiber.await
+let try_await = Fiber.try_await
 let yield = Fiber.yield
 let schedule_micro_task = Fuseau_core.schedule_micro_task
 let main = Main.main
@@ -37,3 +40,4 @@ let main = Main.main
 module IO = IO
 
 let sleep : float -> unit = Sleep.sleep
+let cancel_after = Utils_.cancel_after
