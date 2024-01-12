@@ -1,7 +1,5 @@
 (** Effects *)
 
-open Common_
-
 type _ Effect.t +=
   | (* | Await : (Types.any_fiber_callback -> unit) -> unit Effect.t *)
       Suspend : {
