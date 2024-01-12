@@ -49,8 +49,8 @@ let main_loop_ (self : t) : unit =
       continue := false
   done
 
-let main ?max_tick_duration_us ~loop:ev_loop (main : unit -> 'a) : 'a =
-  let sched = Scheduler.create ?max_tick_duration_us ~ev_loop () in
+let main ~loop:ev_loop (main : unit -> 'a) : 'a =
+  let sched = Scheduler.create ~ev_loop () in
   let self = { sched; ev_loop } in
 
   (* run the loop that interleaves scheduler and Libuv steps *)

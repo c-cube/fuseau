@@ -2,11 +2,8 @@
 
 type t
 
-val create : ?max_tick_duration_us:int -> ev_loop:Event_loop.t -> unit -> t
-(** New scheduler.
-   @param max_tick_duration_us maximum duration, in microseconds, of the
-   computational part of a tick (ie. the part where we run fibers
-   without polling IOs) *)
+val create : ev_loop:Event_loop.t -> unit -> t
+(** New scheduler. *)
 
 val active : t -> bool
 (** Is the scheduler not finished yet? *)

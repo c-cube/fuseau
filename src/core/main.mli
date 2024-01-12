@@ -4,7 +4,7 @@
    in an interspersed way.
 *)
 
-val main : ?max_tick_duration_us:int -> loop:Event_loop.t -> (unit -> 'a) -> 'a
+val main : loop:Event_loop.t -> (unit -> 'a) -> 'a
 (** [main f] runs [f()] in an event loop. The value is returned
     when the loop has nothing else to do, even if the particular
     computation was finished earlier.

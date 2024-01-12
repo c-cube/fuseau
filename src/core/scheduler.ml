@@ -11,16 +11,12 @@ type t = {
   ev_loop: Event_loop.t;
   mutable cur_fiber: Fiber.any option;  (** Currently running fiber *)
   task_q: task Queue.t;  (** Queue of regular tasks *)
+  next_tick_tasks: task Queue.t;  (** Tasks for the next tick *)
   micro_tasks_q: microtask Queue.t;  (** Microtasks, run almost immediately *)
   outside_q: task Queue.t Lock.t;
       (** Queue of tasks from the outside (from other threads possibly) *)
   mutable n_tasks: int;  (** Total number of tasks processed since the start *)
-  max_tick_duration_us: int;
-      (** Maximum duration of the compute part of a tick *)
-  mutable tick_start_ns: int64;  (** Start of current tick in ns  *)
 }
-
-let _default_max_tick_duration_us : int = 500
 
 let k_current_scheduler : t option ref TLS.key =
   TLS.new_key (fun () -> ref None)
@@ -43,7 +39,7 @@ let[@inline] check_active_ (self : t) =
 let[@inline] schedule_ (self : t) (task : task) : unit =
   Trace.message "schedule";
   check_active_ self;
-  Queue.push task self.task_q
+  Queue.push task self.next_tick_tasks
 
 let[@inline] schedule_micro_task_ (self : t) f : unit =
   check_active_ self;
@@ -59,6 +55,7 @@ let[@inline] has_pending_tasks self : bool =
   not
     (Queue.is_empty self.task_q
     && Queue.is_empty self.micro_tasks_q
+    && Queue.is_empty self.next_tick_tasks
     && Lock.map_no_exn Queue.is_empty self.outside_q)
 
 module Internal_ = struct
@@ -67,33 +64,22 @@ module Internal_ = struct
   let[@inline] ev_loop self = self.ev_loop
 end
 
-let create ?(max_tick_duration_us = _default_max_tick_duration_us) ~ev_loop () :
-    t =
+let create ~ev_loop () : t =
   {
     ev_loop;
     cur_fiber = None;
     task_q = Queue.create ();
+    next_tick_tasks = Queue.create ();
     root_fiber = Any_fiber (Fiber.Internal_.create ());
     micro_tasks_q = Queue.create ();
     outside_q = Lock.create @@ Queue.create ();
     n_tasks = 0;
-    tick_start_ns = Time.monotonic_time_ns ();
-    max_tick_duration_us;
   }
 
 let dispose (self : t) : unit =
   (* cancel the main task *)
   let ebt = Exn_bt.get_callstack 15 Exit in
   Fiber.Internal_.cancel_any self.root_fiber ebt
-
-(** Has the work quota for the current iteration expired? *)
-let tick_is_expired_ (self : t) : bool =
-  let now = Time.monotonic_time_ns () in
-  let deadline =
-    let open! Int64 in
-    add self.tick_start_ns (mul 1000L (of_int self.max_tick_duration_us))
-  in
-  now > deadline
 
 (** Scheduler for the current thread *)
 let[@inline] get_sched_for_cur_thread_ () : t =
@@ -142,8 +128,7 @@ let spawn_from_anywhere (self : t) f : _ Fiber.t =
   fiber
 
 (** call [f()] and resolve the fiber once [f()] is done *)
-let run_task_and_resolve_fiber (self : t) fiber f =
-  self.cur_fiber <- Some (Any_fiber fiber);
+let run_task_and_resolve_fiber fiber f =
   try
     let r = f () in
     Fiber.Internal_.resolve fiber r
@@ -172,7 +157,8 @@ let run_task (self : t) (task : task) : unit =
     in
 
     (* whole fiber runs under the effect handler *)
-    ED.try_with (run_task_and_resolve_fiber self fiber) f { ED.effc }
+    self.cur_fiber <- Some (Any_fiber fiber);
+    ED.try_with (run_task_and_resolve_fiber fiber) f { ED.effc }
   | T_cont ((Any_fiber fib as any_fib), k, x) ->
     self.cur_fiber <- Some any_fib;
     (match Fiber.peek fib with
@@ -191,13 +177,12 @@ let run_iteration (self : t) : unit =
         [ "n-tasks", `Int (Queue.length self.task_q) ])
   in
   check_active_ self;
+
+  (* move all pending tasks to [task_q] *)
+  Queue.transfer self.next_tick_tasks self.task_q;
   Lock.with_ self.outside_q (fun q -> Queue.transfer q self.task_q);
-  self.tick_start_ns <- Time.monotonic_time_ns ();
 
-  let continue = ref true in
-  let n = ref 0 in
-
-  while !continue do
+  while not (Queue.is_empty self.task_q) do
     let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "sched.iter" in
 
     (* run microtasks *)
@@ -208,17 +193,10 @@ let run_iteration (self : t) : unit =
         Printf.eprintf "warning: microtask raised %s\n%!" (Printexc.to_string e)
     done;
 
-    incr n;
+    let task = Queue.pop self.task_q in
+    self.n_tasks <- 1 + self.n_tasks;
 
-    if Queue.is_empty self.task_q || (!n mod 64 = 0 && tick_is_expired_ self)
-    then
-      continue := false
-    else (
-      let task = Queue.pop self.task_q in
-      self.n_tasks <- 1 + self.n_tasks;
-
-      run_task self task;
-      (* cleanup *)
-      self.cur_fiber <- None
-    )
+    run_task self task;
+    (* cleanup *)
+    self.cur_fiber <- None
   done
