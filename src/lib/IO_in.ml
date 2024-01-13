@@ -22,26 +22,6 @@ let empty : t =
     method input _ _ _ = 0
   end
 
-let of_in_channel ?(close_noerr = false) (ic : in_channel) : t =
-  object
-    method input buf i len = input ic buf i len
-
-    method close () =
-      if close_noerr then
-        close_in_noerr ic
-      else
-        close_in ic
-  end
-
-let open_file ?close_noerr ?(mode = 0o644)
-    ?(flags = [ Open_rdonly; Open_binary ]) filename : t =
-  let ic = open_in_gen flags mode filename in
-  of_in_channel ?close_noerr ic
-
-let with_open_file ?close_noerr ?mode ?flags filename f =
-  let ic = open_file ?close_noerr ?mode ?flags filename in
-  Fun.protect ~finally:ic#close (fun () -> f ic)
-
 let of_bytes ?(off = 0) ?len (b : bytes) : t =
   (* i: current position in [b] *)
   let i = ref off in
@@ -145,9 +125,26 @@ let input_all ?(buf = Bytes.create 128) (self : #t) : string =
   else
     Bytes.sub_string !buf 0 !i
 
-let of_unix_fd ?(close_noerr = false) (fd : Unix.file_descr) : t =
+let of_unix_fd ?(close_noerr = false) ?(buf = Bytes.create _default_buf_size)
+    (fd : Unix.file_descr) : t =
+  let buf_len = ref 0 in
+  let buf_off = ref 0 in
+
+  let refill () =
+    buf_off := 0;
+    buf_len := IO.read fd buf 0 (Bytes.length buf)
+  in
+
   object
-    method input buf i len = Unix.read fd buf i len
+    method input b i len : int =
+      if !buf_len = 0 then refill ();
+      let n = min len !buf_len in
+      if n > 0 then (
+        Bytes.blit buf !buf_off b i n;
+        buf_off := !buf_off + n;
+        buf_len := !buf_len - n
+      );
+      n
 
     method close () =
       if close_noerr then (

@@ -1,4 +1,4 @@
 
 (executables
-  (names count)
-  (libraries fuseau fuseau.unix))
+  (names count echo_server)
+  (libraries fuseau fuseau.unix trace-tef))

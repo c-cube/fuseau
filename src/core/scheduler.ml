@@ -133,9 +133,10 @@ let run_task_and_resolve_fiber fiber f =
   try
     let r = f () in
     Fiber.Internal_.resolve fiber r
-  with e ->
+  with exn ->
     let bt = Printexc.get_raw_backtrace () in
-    Fiber.Internal_.cancel fiber (Exn_bt.make e bt)
+    Trace.messagef (fun k -> k "fiber raised %s" (Printexc.to_string exn));
+    Fiber.Internal_.cancel fiber (Exn_bt.make exn bt)
 
 let run_task (self : t) (task : task) : unit =
   Trace.message "sched.run-task";
@@ -159,7 +160,8 @@ let run_task (self : t) (task : task) : unit =
 
     (* whole fiber runs under the effect handler *)
     self.cur_fiber <- Some (Any_fiber fiber);
-    ED.try_with (run_task_and_resolve_fiber fiber) f { ED.effc }
+    (try ED.try_with (run_task_and_resolve_fiber fiber) f { ED.effc }
+     with exn -> Printf.eprintf "fiber raised %s\n%!" (Printexc.to_string exn))
   | T_cont ((Any_fiber fib as any_fib), k, x) ->
     self.cur_fiber <- Some any_fib;
     (match Fiber.peek fib with

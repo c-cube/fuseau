@@ -20,23 +20,9 @@ val create :
 val empty : t
 (** Empty input, contains 0 bytes. *)
 
-val of_in_channel : ?close_noerr:bool -> in_channel -> t
-(** Wrap a standard input channel. *)
-
-val of_unix_fd : ?close_noerr:bool -> Unix.file_descr -> t
+val of_unix_fd : ?close_noerr:bool -> ?buf:bytes -> Unix.file_descr -> t
 (** Create an in stream from a raw Unix file descriptor. The file descriptor
       must be opened for reading. *)
-
-val open_file :
-  ?close_noerr:bool -> ?mode:int -> ?flags:open_flag list -> string -> t
-
-val with_open_file :
-  ?close_noerr:bool ->
-  ?mode:int ->
-  ?flags:open_flag list ->
-  string ->
-  (t -> 'a) ->
-  'a
 
 val of_string : ?off:int -> ?len:int -> string -> t
 (** An input channel reading from the string.

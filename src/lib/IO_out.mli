@@ -30,29 +30,12 @@ val create :
 val dummy : t
 (** Dummy output, drops everything written to it. *)
 
-val of_out_channel : ?close_noerr:bool -> out_channel -> t
-(** Wrap an out channel. *)
-
-val of_unix_fd : Unix.file_descr -> t
-(** Output stream directly writing into the given Unix file descriptor. *)
+val of_unix_fd : ?close_noerr:bool -> ?buf:bytes -> Unix.file_descr -> t
+(** Output stream writing into the given Unix file descriptor. *)
 
 val of_buffer : Buffer.t -> t
 (** [of_buffer buf] is an output channel that writes directly into [buf].
     [flush] and [close] have no effect. *)
-
-val open_file :
-  ?close_noerr:bool -> ?mode:int -> ?flags:open_flag list -> string -> t
-(** [open_file file] creates an out stream writing into the given file.
-    @param mode permissions for the file creation
-    @param flags set of unix flags to use. It must contain write permissions. *)
-
-val with_open_file :
-  ?close_noerr:bool ->
-  ?mode:int ->
-  ?flags:open_flag list ->
-  string ->
-  (t -> 'a) ->
-  'a
 
 val output_char : #t -> char -> unit
 (** Output a single char *)

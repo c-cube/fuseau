@@ -1,3 +1,5 @@
+open Common_
+
 class type t =
   object
     method output_char : char -> unit
@@ -22,36 +24,55 @@ let dummy : t =
     method output _ _ _ = ()
   end
 
-(** [of_out_channel oc] wraps the channel into a {!Out_channel.t}.
-      @param close_noerr if true, then closing the result uses [close_out_noerr]
-      instead of [close_out] to close [oc] *)
-let of_out_channel ?(close_noerr = false) (oc : out_channel) : t =
+let of_unix_fd ?(close_noerr = false) ?(buf = Bytes.create _default_buf_size) fd
+    : t =
+  let buf_off = ref 0 in
+
+  let[@inline] is_full () = !buf_off = Bytes.length buf in
+
+  let flush () =
+    if !buf_off > 0 then (
+      IO.write fd buf 0 !buf_off;
+      buf_off := 0
+    )
+  in
+
   object
-    method output_char c = output_char oc c
-    method output bs i len = output oc bs i len
+    method output_char c =
+      if is_full () then flush ();
+      Bytes.set buf !buf_off c;
+      incr buf_off
+
+    method output bs i len : unit =
+      let i = ref i in
+      let len = ref len in
+
+      while !len > 0 do
+        (* make space *)
+        if is_full () then flush ();
+
+        let n = min !len (Bytes.length buf - !buf_off) in
+        Bytes.blit bs !i buf !buf_off n;
+        buf_off := !buf_off + n;
+        i := !i + n;
+        len := !len - n
+      done;
+      (* if full, write eagerly *)
+      if is_full () then flush ()
 
     method close () =
-      if close_noerr then
-        close_out_noerr oc
-      else (
-        flush oc;
-        close_out oc
+      if close_noerr then (
+        try
+          flush ();
+          Unix.close fd
+        with _ -> ()
+      ) else (
+        flush ();
+        Unix.close fd
       )
 
-    method flush () = flush oc
+    method flush = flush
   end
-
-let of_unix_fd fd : t = of_out_channel (Unix.out_channel_of_descr fd)
-
-let open_file ?close_noerr ?(mode = 0o644)
-    ?(flags = [ Open_binary; Open_wronly; Open_creat; Open_trunc ]) filename : t
-    =
-  let oc = open_out_gen flags mode filename in
-  of_out_channel ?close_noerr oc
-
-let with_open_file ?close_noerr ?mode ?flags filename f =
-  let oc = open_file ?close_noerr ?mode ?flags filename in
-  Fun.protect ~finally:oc#close (fun () -> f oc)
 
 let of_buffer (buf : Buffer.t) : t =
   object
