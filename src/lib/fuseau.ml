@@ -38,6 +38,9 @@ let main = Main.main
 (** {2 IO primitives} *)
 
 module IO = IO
+module IO_in = IO_in
+module IO_out = IO_out
+module Net = Net
 
 let sleep : float -> unit = Sleep.sleep
 let cancel_after = Utils_.cancel_after

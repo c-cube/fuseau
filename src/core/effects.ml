@@ -9,5 +9,3 @@ type _ Effect.t +=
     }
       -> unit Effect.t
   | Yield : unit Effect.t
-
-(* let[@inline] await tr : unit = Effect.perform (Await tr) *)

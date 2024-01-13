@@ -61,6 +61,7 @@ let[@inline] has_pending_tasks self : bool =
 module Internal_ = struct
   let has_pending_tasks = has_pending_tasks
   let k_current_scheduler = k_current_scheduler
+  let check_active = check_active_
   let[@inline] ev_loop self = self.ev_loop
 end
 

@@ -31,5 +31,6 @@ module Lock = Lock
 
 let spawn = Scheduler.spawn
 let spawn_from_anywhere = Scheduler.spawn_from_anywhere
+let spawn_as_child_of = Scheduler.spawn_as_child_of
 let schedule_micro_task = Scheduler.schedule_micro_task
 let main = Main.main

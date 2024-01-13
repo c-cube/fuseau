@@ -11,3 +11,5 @@ let[@inline] get_sched what () : Scheduler.t =
   match !(TLS.get Scheduler.Internal_.k_current_scheduler) with
   | None -> failwith @@ spf "%s must run from inside the fuseau scheduler" what
   | Some s -> s
+
+let _default_buf_size = 16 * 1024

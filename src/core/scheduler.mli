@@ -68,6 +68,7 @@ module Internal_ : sig
   val has_pending_tasks : t -> bool
   (** Are there currently tasks that are ready to run? *)
 
+  val check_active : t -> unit
   val ev_loop : t -> Event_loop.t
   val k_current_scheduler : t option ref TLS.key
 end
