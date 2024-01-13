@@ -11,11 +11,17 @@ let main ~port () =
         pf "handle client on %s\n%!" (Fuseau.Net.Sockaddr.show client_addr);
 
         let buf = Bytes.create 256 in
-        while true do
+        let continue = ref true in
+        while !continue do
           let n = Fuseau.IO_in.input ic buf 0 (Bytes.length buf) in
-          Fuseau.IO_out.output oc buf 0 n;
-          Fuseau.IO_out.flush oc
-        done)
+          if n = 0 then
+            continue := false
+          else (
+            Fuseau.IO_out.output oc buf 0 n;
+            Fuseau.IO_out.flush oc
+          )
+        done;
+        pf "done with client on %s\n%!" (Fuseau.Net.Sockaddr.show client_addr))
   in
   Fuseau.Net.TCP_server.join server;
   print_endline "exit"
