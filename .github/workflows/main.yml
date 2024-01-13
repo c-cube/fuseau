@@ -23,19 +23,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@main
-        with:
-          submodules: true
       - name: Use OCaml ${{ matrix.ocaml-compiler }}
         uses: ocaml/setup-ocaml@v2
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
           dune-cache: true
-          opam-pin: false
-          opam-local-packages: ""
           allow-prerelease-opam: true
 
-      - run: opam pin vendor/picos/ -y -n
-      - run: opam pin . -y -n
       - run: opam install -t fuseau --deps-only
       - run: opam exec -- dune build @install
       - run: opam exec -- dune runtest
