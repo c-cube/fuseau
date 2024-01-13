@@ -1,4 +1,4 @@
 
 (executables
   (names count)
-  (libraries fuseau))
+  (libraries fuseau fuseau.unix))
