@@ -126,7 +126,7 @@ class ev_loop : Event_loop.t =
 
       let delay =
         if block then
-          Option.value delay ~default:0.
+          Option.value delay ~default:10.
         else
           (* do not wait *)
           0.
