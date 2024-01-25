@@ -25,7 +25,7 @@
   dune
   (mtime
    (>= 2.0))
-  trace
+  (trace (>= 0.6))
   (trace-tef :with-test)
   thread-local-storage)
  (tags
