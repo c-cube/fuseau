@@ -17,15 +17,15 @@ let run () =
   Fuseau.main ~loop @@ fun () ->
   pf "start\n%!";
 
-  let fib10 = Fuseau.spawn (fun () -> fib 10) in
+  let fib10 = Fuseau.spawn ~name:"fib10" (fun () -> fib 10) in
 
-  let fib14 = Fuseau.spawn (fun () -> fib 14) in
+  let fib14 = Fuseau.spawn ~name:"fib14" (fun () -> fib 14) in
   pf "fib10=%d\n" (Fuseau.await fib10);
 
   pf "fib14=%d\n" (Fuseau.await fib14);
 
   let fib30 =
-    Fuseau.spawn ~propagate_cancel_to_parent:false (fun () ->
+    Fuseau.spawn ~name:"fib30" ~propagate_cancel_to_parent:false (fun () ->
         Fuseau.cancel_after 0.000_000_010;
         fib 30)
   in

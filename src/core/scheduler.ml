@@ -60,10 +60,14 @@ let[@inline] has_pending_tasks self : bool =
     && Queue.is_empty self.next_tick_tasks
     && Lock.map_no_exn Queue.is_empty self.outside_q)
 
+let[@inline] n_queued_tasks_ (self : t) : int =
+  Queue.length self.task_q + Queue.length self.next_tick_tasks
+
 module Internal_ = struct
   let has_pending_tasks = has_pending_tasks
   let k_current_scheduler = k_current_scheduler
   let check_active = check_active_
+  let n_queued_tasks = n_queued_tasks_
   let[@inline] ev_loop self = self.ev_loop
 end
 
@@ -86,7 +90,7 @@ let dispose (self : t) : unit =
   Fiber.Internal_.cancel_any self.root_fiber ebt
 
 let[@inline] trace_enter_fiber_ (self : t) (fiber : _ Fiber.t) =
-  if fiber.name != "" then
+  if fiber.name <> "" then
     self.cur_span <- Trace.enter_span ~__FILE__ ~__LINE__ fiber.name
 
 let[@inline] trace_exit_fiber_ (self : t) =
@@ -164,7 +168,7 @@ let run_task (self : t) (task : task) : unit =
           (fun k ->
             trace_exit_fiber_ self;
             let wakeup () =
-              Trace.message "wakeup suspended fiber";
+              (* Trace.message "wakeup suspended fiber"; *)
               schedule_ self (T_cont (Any_fiber fiber, k, ()))
             in
             before_suspend ~wakeup)

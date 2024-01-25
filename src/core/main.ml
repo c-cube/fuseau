@@ -15,7 +15,10 @@ let main_loop_ (self : t) : unit =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau.main" in
   let continue = ref true in
   while !continue do
-    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau.loop.step" in
+    (* let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau.loop.step" in *)
+    Trace.counter_int "fuseau.n-tasks"
+      (Scheduler.Internal_.n_queued_tasks self.sched);
+
     Scheduler.run_iteration self.sched;
 
     (* run a step of libuv polling, but without waiting because
@@ -34,13 +37,16 @@ let main_loop_ (self : t) : unit =
          let async = Luv.Async.init ~loop:self.loop ignore |> Err.unwrap_luv in
          self.async <- Some async;
       *)
-      self.ev_loop#one_step ~block:true ()
+      self.ev_loop#one_step ~block:true ();
+
       (* TODO:
          (* cleanup async *)
          Luv.Handle.close async ignore;
          self.async <- None;
          Atomic.set self.did_trigger_async false
       *)
+      Trace.counter_int "fuseau.n-tasks"
+        (Scheduler.Internal_.n_queued_tasks self.sched)
     | false, false ->
       (* no more work to do, exit *)
       continue := false
