@@ -20,6 +20,7 @@ type 'a state = 'a Types.fiber_status =
   | Wait of {
       waiters: 'a callback list;
       children: any Fiber_handle.Map.t;
+      on_cancel: Types.cancel_callback list;
     }
 
 val peek : 'a t -> 'a state
@@ -47,6 +48,12 @@ val on_res : 'a t -> 'a callback -> unit
 (** Wait for fiber to be done and call the callback
     with the result. If the fiber is done already then the
     callback is invoked immediately with its result. *)
+
+val with_cancel_callback : (Exn_bt.t -> unit) -> (unit -> 'a) -> 'a
+(** [let@ () = with_cancel_callback cb in <e>] evaluates [e]
+    in a scope in which, if the current fiber is cancelled,
+    [cb()] is called. If [e] returns without the fiber being cancelled,
+    this callback is removed. *)
 
 (**/**)
 

@@ -26,7 +26,13 @@ let run () =
 
   let fib30 =
     Fuseau.spawn ~name:"fib30" ~propagate_cancel_to_parent:false (fun () ->
-        Fuseau.cancel_after 0.000_000_010;
+        let@ () =
+          Fuseau.Fiber.with_cancel_callback (fun ebt ->
+              Trace.message "fib30 cancelled";
+              pf "fib30 cancelled with %s" (Fuseau.Exn_bt.show ebt))
+        in
+
+        Fuseau.cancel_after 0.002;
         fib 30)
   in
 

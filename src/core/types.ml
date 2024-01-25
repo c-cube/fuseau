@@ -19,6 +19,7 @@ type 'a fls_key = (module FLS_KEY with type t = 'a)
 (** A FLS key (fiber local storage) *)
 
 type 'a fiber_callback = ('a, Exn_bt.t) result -> unit
+type cancel_callback = Exn_bt.t -> unit
 
 type 'a fiber = {
   id: Fiber_handle.t;  (** unique identifier for this fiber *)
@@ -35,6 +36,7 @@ and 'a fiber_status =
       waiters: 'a fiber_callback list;
           (** Callbacks waiting for the fiber to be done *)
       children: any_fiber FM.t;  (** Set of children *)
+      on_cancel: cancel_callback list;
     }
 
 and any_fiber = Any_fiber : _ fiber -> any_fiber [@@unboxed]

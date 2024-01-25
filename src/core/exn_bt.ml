@@ -13,6 +13,7 @@ let[@inline] get_callstack n exn =
   let bt = Printexc.get_callstack n in
   { bt; exn }
 
+let show self = Printexc.to_string self.exn
 let[@inline] raise self = Printexc.raise_with_backtrace self.exn self.bt
 
 let[@inline] discontinue k self =

@@ -9,6 +9,7 @@ val make : exn -> Printexc.raw_backtrace -> t
 val get : exn -> t
 val get_callstack : int -> exn -> t
 val raise : t -> 'a
+val show : t -> string
 val discontinue : ('a, 'b) Effect.Deep.continuation -> t -> 'b
 
 val discontinue_with :

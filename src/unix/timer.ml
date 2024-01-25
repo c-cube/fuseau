@@ -24,7 +24,7 @@ end)
 type t = { mutable tasks: Task_heap.t }
 
 (** accepted time diff for actions. *)
-let epsilon_s = 0.000_005
+let epsilon_s = 0.000_001
 
 type tick_res =
   | Wait of float

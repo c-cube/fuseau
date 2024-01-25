@@ -180,12 +180,15 @@ let run_task (self : t) (task : task) : unit =
       | _ -> None
     in
 
-    (* whole fiber runs under the effect handler *)
-    self.cur_fiber <- Some (Any_fiber fiber);
-    trace_enter_fiber_ self fiber;
+    if not (Fiber.is_cancelled fiber) then (
+      (* whole fiber runs under the effect handler *)
+      self.cur_fiber <- Some (Any_fiber fiber);
+      trace_enter_fiber_ self fiber;
 
-    (try ED.try_with (run_task_and_resolve_fiber self fiber) f { ED.effc }
-     with exn -> Printf.eprintf "fiber raised %s\n%!" (Printexc.to_string exn))
+      try ED.try_with (run_task_and_resolve_fiber self fiber) f { ED.effc }
+      with exn ->
+        Printf.eprintf "fiber raised %s\n%!" (Printexc.to_string exn)
+    )
   | T_cont ((Any_fiber fiber as any_fib), k, x) ->
     (match Fiber.peek fiber with
     | Fail ebt ->
