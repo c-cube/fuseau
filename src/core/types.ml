@@ -23,6 +23,7 @@ type 'a fiber_callback = ('a, Exn_bt.t) result -> unit
 type 'a fiber = {
   id: Fiber_handle.t;  (** unique identifier for this fiber *)
   mutable fls: fls_value array;  (** local storage for this fiber *)
+  name: string;  (** Optional name, for tracing *)
   state: 'a fiber_status A.t;
       (** Current state of the fiber (result, or cancellation status) *)
 }

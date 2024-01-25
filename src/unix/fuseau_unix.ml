@@ -123,7 +123,6 @@ class ev_loop : Event_loop.t =
   object
     (* val read_ : (event_handle -> unit) Int_tbl.t = Int_tbl.create 32 *)
     method one_step ~block () : unit =
-      let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau.unix.one-step" in
       let delay = run_timer_ _timer in
 
       let delay =

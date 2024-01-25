@@ -28,7 +28,8 @@ val schedule_micro_task : (unit -> unit) -> unit
     Not thread-safe.
     @raise Inactive if the scheduler is inactive. *)
 
-val spawn : ?propagate_cancel_to_parent:bool -> (unit -> 'a) -> 'a Fiber.t
+val spawn :
+  ?name:string -> ?propagate_cancel_to_parent:bool -> (unit -> 'a) -> 'a Fiber.t
 (** Must be run from inside the scheduler's thread. Spawn a new computation.
     This fiber has an implicit parent, which is normally the currently running
     fiber (the one calling {!spawn}). If the parent fails or is cancelled, the
@@ -37,13 +38,14 @@ val spawn : ?propagate_cancel_to_parent:bool -> (unit -> 'a) -> 'a Fiber.t
       then the parent fiber will also fail (child to parent).
     @raise Inactive if the scheduler is inactive. *)
 
-val spawn_from_anywhere : t -> (unit -> 'a) -> 'a Fiber.t
+val spawn_from_anywhere : ?name:string -> t -> (unit -> 'a) -> 'a Fiber.t
 (** Spawn a task from anywhere, possibly from another thread. The task will
     run in a subsequent call to {!run_iteration} in the scheduler's thread.
     Thread-safe, more costly than {!spawn}. Runs under the root switch.
     @raise Inactive if the scheduler is inactive. *)
 
 val spawn_as_child_of :
+  ?name:string ->
   ?propagate_cancel_to_parent:bool ->
   t ->
   _ Fiber.t ->

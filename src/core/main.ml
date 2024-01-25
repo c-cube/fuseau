@@ -15,7 +15,7 @@ let main_loop_ (self : t) : unit =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau.main" in
   let continue = ref true in
   while !continue do
-    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau.iter" in
+    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau.loop.step" in
     Scheduler.run_iteration self.sched;
 
     (* run a step of libuv polling, but without waiting because
@@ -25,12 +25,9 @@ let main_loop_ (self : t) : unit =
     let sched_active = Scheduler.Internal_.has_pending_tasks self.sched in
     let ev_loop_active = Event_loop.has_pending_tasks self.ev_loop in
     match sched_active, ev_loop_active with
-    | true, _ ->
-      Trace.message "sched active";
-      () (* continue *)
+    | true, _ -> () (* continue *)
     | false, true ->
       (* run a step of libuv polling + waiting *)
-      Trace.message "run evloop block=true";
 
       (* TODO:
          (* create an async to allow external [spawn] to wake us up *)
@@ -58,7 +55,9 @@ let main ~loop:ev_loop (main : unit -> 'a) : 'a =
     let@ () = with_scheduler_ self.sched in
 
     (* run main task *)
-    let fib = Scheduler.spawn ~propagate_cancel_to_parent:true main in
+    let fib =
+      Scheduler.spawn ~name:"fuseau_main" ~propagate_cancel_to_parent:true main
+    in
 
     main_loop_ self;
     fib

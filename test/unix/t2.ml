@@ -6,13 +6,13 @@ let run () =
   Fuseau.main ~loop @@ fun () ->
   pf "start\n%!";
   let f1 =
-    Fuseau.spawn (fun () ->
+    Fuseau.spawn ~name:"f1" (fun () ->
         Fuseau.sleep 0.5;
         pf "f1 returns\n%!";
         41)
   in
   let f2 =
-    Fuseau.spawn (fun () ->
+    Fuseau.spawn ~name:"f2" (fun () ->
         Fuseau.sleep 0.3;
         pf "f2 returns\n%!";
         100)

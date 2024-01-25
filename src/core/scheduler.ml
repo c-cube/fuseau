@@ -10,6 +10,7 @@ type t = {
   root_fiber: Fiber.any;  (** Fiber encompassing all other *)
   ev_loop: Event_loop.t;
   mutable cur_fiber: Fiber.any option;  (** Currently running fiber *)
+  mutable cur_span: Trace.span;  (** Span for the current fiber, if any *)
   task_q: task Queue.t;  (** Queue of regular tasks *)
   next_tick_tasks: task Queue.t;  (** Tasks for the next tick *)
   micro_tasks_q: microtask Queue.t;  (** Microtasks, run almost immediately *)
@@ -32,12 +33,13 @@ let () =
 
 exception Inactive
 
+let _dummy_span = Trace.Collector.dummy_span
+
 let[@inline] check_active_ (self : t) =
   let (Any_fiber f) = self.root_fiber in
   if Fiber.is_done f then raise Inactive
 
 let[@inline] schedule_ (self : t) (task : task) : unit =
-  Trace.message "schedule";
   check_active_ self;
   Queue.push task self.next_tick_tasks
 
@@ -69,6 +71,7 @@ let create ~ev_loop () : t =
   {
     ev_loop;
     cur_fiber = None;
+    cur_span = 0L;
     task_q = Queue.create ();
     next_tick_tasks = Queue.create ();
     root_fiber = Any_fiber (Fiber.Internal_.create ());
@@ -82,6 +85,16 @@ let dispose (self : t) : unit =
   let ebt = Exn_bt.get_callstack 15 Exit in
   Fiber.Internal_.cancel_any self.root_fiber ebt
 
+let[@inline] trace_enter_fiber_ (self : t) (fiber : _ Fiber.t) =
+  if fiber.name != "" then
+    self.cur_span <- Trace.enter_span ~__FILE__ ~__LINE__ fiber.name
+
+let[@inline] trace_exit_fiber_ (self : t) =
+  if self.cur_span <> Trace.Collector.dummy_span then (
+    Trace.exit_span self.cur_span;
+    self.cur_span <- Trace.Collector.dummy_span
+  )
+
 (** Scheduler for the current thread *)
 let[@inline] get_sched_for_cur_thread_ () : t =
   match !(TLS.get k_current_scheduler) with
@@ -92,7 +105,8 @@ let[@inline] schedule_micro_task (f : unit -> unit) : unit =
   let self = get_sched_for_cur_thread_ () in
   schedule_micro_task_ self f
 
-let spawn ?(propagate_cancel_to_parent = true) (f : unit -> 'a) : 'a Fiber.t =
+let spawn ?name ?(propagate_cancel_to_parent = true) (f : unit -> 'a) :
+    'a Fiber.t =
   let self : t = get_sched_for_cur_thread_ () in
   check_active_ self;
 
@@ -103,43 +117,43 @@ let spawn ?(propagate_cancel_to_parent = true) (f : unit -> 'a) : 'a Fiber.t =
     | Some s -> s
   in
 
-  let fiber = Fiber.Internal_.create () in
+  let fiber = Fiber.Internal_.create ?name () in
   Fiber.Internal_.add_child
     ~protected:(not propagate_cancel_to_parent)
     parent fiber;
   schedule_ self (T_start (fiber, f));
   fiber
 
-let spawn_as_child_of ?(propagate_cancel_to_parent = true) (self : t)
+let spawn_as_child_of ?name ?(propagate_cancel_to_parent = true) (self : t)
     (parent : _ Fiber.t) f : _ Fiber.t =
   check_active_ self;
-  let fiber = Fiber.Internal_.create () in
+  let fiber = Fiber.Internal_.create ?name () in
   Fiber.Internal_.add_child
     ~protected:(not propagate_cancel_to_parent)
     parent fiber;
   schedule_ self (T_start (fiber, f));
   fiber
 
-let spawn_from_anywhere (self : t) f : _ Fiber.t =
+let spawn_from_anywhere ?name (self : t) f : _ Fiber.t =
   check_active_ self;
   let (Any_fiber parent) = self.root_fiber in
-  let fiber = Fiber.Internal_.create () in
+  let fiber = Fiber.Internal_.create ?name () in
   Fiber.Internal_.add_child ~protected:true parent fiber;
   Lock.with_ self.outside_q (fun q -> Queue.push (T_start (fiber, f)) q);
   fiber
 
 (** call [f()] and resolve the fiber once [f()] is done *)
-let run_task_and_resolve_fiber fiber f =
+let run_task_and_resolve_fiber (self : t) fiber f =
   try
     let r = f () in
+    trace_exit_fiber_ self;
     Fiber.Internal_.resolve fiber r
   with exn ->
     let bt = Printexc.get_raw_backtrace () in
-    Trace.messagef (fun k -> k "fiber raised %s" (Printexc.to_string exn));
+    trace_exit_fiber_ self;
     Fiber.Internal_.cancel fiber (Exn_bt.make exn bt)
 
 let run_task (self : t) (task : task) : unit =
-  Trace.message "sched.run-task";
   match task with
   | T_start (fiber, f) ->
     (* the main effect handler *)
@@ -148,23 +162,28 @@ let run_task (self : t) (task : task) : unit =
       | Effects.Suspend { before_suspend } ->
         Some
           (fun k ->
+            trace_exit_fiber_ self;
             let wakeup () =
               Trace.message "wakeup suspended fiber";
               schedule_ self (T_cont (Any_fiber fiber, k, ()))
             in
             before_suspend ~wakeup)
       | Effects.Yield ->
-        Some (fun k -> schedule_ self (T_cont (Any_fiber fiber, k, ())))
+        Some
+          (fun k ->
+            trace_exit_fiber_ self;
+            schedule_ self (T_cont (Any_fiber fiber, k, ())))
       | _ -> None
     in
 
     (* whole fiber runs under the effect handler *)
     self.cur_fiber <- Some (Any_fiber fiber);
-    (try ED.try_with (run_task_and_resolve_fiber fiber) f { ED.effc }
+    trace_enter_fiber_ self fiber;
+
+    (try ED.try_with (run_task_and_resolve_fiber self fiber) f { ED.effc }
      with exn -> Printf.eprintf "fiber raised %s\n%!" (Printexc.to_string exn))
-  | T_cont ((Any_fiber fib as any_fib), k, x) ->
-    self.cur_fiber <- Some any_fib;
-    (match Fiber.peek fib with
+  | T_cont ((Any_fiber fiber as any_fib), k, x) ->
+    (match Fiber.peek fiber with
     | Fail ebt ->
       (* cleanup *)
       Exn_bt.discontinue k ebt
@@ -172,13 +191,10 @@ let run_task (self : t) (task : task) : unit =
     | Wait _ ->
       (* continue running the fiber *)
       self.cur_fiber <- Some any_fib;
+      trace_enter_fiber_ self fiber;
       ED.continue k x)
 
 let run_iteration (self : t) : unit =
-  let@ _sp =
-    Trace.with_span ~__FILE__ ~__LINE__ "sched.run_iteration" ~data:(fun () ->
-        [ "n-tasks", `Int (Queue.length self.task_q) ])
-  in
   check_active_ self;
 
   (* move all pending tasks to [task_q] *)
@@ -186,8 +202,6 @@ let run_iteration (self : t) : unit =
   Lock.with_ self.outside_q (fun q -> Queue.transfer q self.task_q);
 
   while not (Queue.is_empty self.task_q) do
-    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "sched.iter" in
-
     (* run microtasks *)
     while not (Queue.is_empty self.micro_tasks_q) do
       let f = Queue.pop self.micro_tasks_q in

@@ -51,7 +51,7 @@ val on_res : 'a t -> 'a callback -> unit
 (**/**)
 
 module Internal_ : sig
-  val create : unit -> 'a t
+  val create : ?name:string -> unit -> 'a t
   val resolve : 'a t -> 'a -> unit
   val cancel : _ t -> Exn_bt.t -> unit
   val cancel_any : any -> Exn_bt.t -> unit
