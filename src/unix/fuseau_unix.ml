@@ -1,5 +1,3 @@
-open Common_
-
 type event_handle = Event_loop.event_handle = { cancel: unit -> unit }
 [@@unboxed]
 
@@ -118,6 +116,10 @@ class ev_loop : Event_loop.t =
   let _timer = Timer.create () in
   let _io_wait : IO_tbl.t = IO_tbl.create () in
 
+  let[@inline] has_pending_tasks () =
+    _io_wait.n_read > 0 || _io_wait.n_write > 0 || Timer.has_tasks _timer
+  in
+
   object
     (* val read_ : (event_handle -> unit) Int_tbl.t = Int_tbl.create 32 *)
     method one_step ~block () : unit =
@@ -133,11 +135,7 @@ class ev_loop : Event_loop.t =
       in
 
       let reads, writes = IO_tbl.prepare_select _io_wait in
-      if reads <> [] || writes <> [] || Timer.has_tasks _timer then (
-        Trace.messagef (fun k ->
-            k "select %d reads, %d writes, delay=%.3f" (List.length reads)
-              (List.length writes) delay);
-
+      if has_pending_tasks () then (
         let reads, writes, _ = Unix.select reads writes [] delay in
         IO_tbl.handle_ready _io_wait reads writes
       );
@@ -167,7 +165,5 @@ class ev_loop : Event_loop.t =
 
     (* TODO: remove?? *)
     method fake_io : Unix.file_descr -> unit = assert false
-    method readable_count : int = _io_wait.n_read
-    method writable_count : int = _io_wait.n_write
-    method timer_count : int = Timer.num_tasks _timer
+    method has_pending_tasks : bool = has_pending_tasks ()
   end
