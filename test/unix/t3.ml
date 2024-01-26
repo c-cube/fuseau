@@ -13,8 +13,7 @@ let rec fib n =
   )
 
 let run () =
-  let loop = new Fuseau_unix.ev_loop in
-  Fuseau.main ~loop @@ fun () ->
+  Fuseau_unix.main @@ fun () ->
   pf "start\n%!";
 
   let fib10 = Fuseau.spawn ~name:"fib10" (fun () -> fib 10) in

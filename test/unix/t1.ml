@@ -2,8 +2,7 @@ let pf = Printf.printf
 let ( let@ ) = ( @@ )
 
 let run () =
-  let loop = new Fuseau_unix.ev_loop in
-  Fuseau.main ~loop @@ fun () ->
+  Fuseau_unix.main @@ fun () ->
   Fuseau.sleep_s 0.5;
   42
 

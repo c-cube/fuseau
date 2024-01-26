@@ -165,3 +165,7 @@ class ev_loop : Event_loop.t =
     method fake_io : Unix.file_descr -> unit = assert false
     method has_pending_tasks : bool = has_pending_tasks ()
   end
+
+let main f =
+  let loop = new ev_loop in
+  Fuseau.main ~loop f

@@ -2,8 +2,7 @@ let pf = Printf.printf
 let ( let@ ) = ( @@ )
 
 let run () =
-  let loop = new Fuseau_unix.ev_loop in
-  Fuseau.main ~loop @@ fun () ->
+  Fuseau_unix.main @@ fun () ->
   pf "start\n%!";
   let f1 =
     Fuseau.spawn ~name:"f1" (fun () ->
