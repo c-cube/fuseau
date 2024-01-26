@@ -1,3 +1,6 @@
 
 (env
   (_ (flags :standard -strict-sequence -warn-error -a+8 -w +a-4-30-40-41-42-70)))
+
+(mdx
+  (libraries fuseau fuseau.unix))

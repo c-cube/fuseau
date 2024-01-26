@@ -1,5 +1,4 @@
 let ( let@ ) = ( @@ )
-let spf = Printf.sprintf
 let pf = Printf.printf
 
 let main ~port () =
