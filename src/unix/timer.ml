@@ -10,8 +10,8 @@ type kind =
 type task = {
   mutable deadline: instant_s;
   mutable active: bool;
-  f: event_handle -> unit;
-  as_event_handle: event_handle;
+  f: cancel_handle -> unit;
+  as_cancel_handle: cancel_handle;
   kind: kind;
 }
 
@@ -28,7 +28,7 @@ let epsilon_s = 0.000_001
 
 type tick_res =
   | Wait of float
-  | Run of (event_handle -> unit) * event_handle
+  | Run of (cancel_handle -> unit) * cancel_handle
   | Empty
 
 let[@inline] has_tasks self = not (Task_heap.is_empty self.tasks)
@@ -38,7 +38,7 @@ let[@inline] pop_task_ self : unit =
   let tasks, _t = Task_heap.take_exn self.tasks in
   self.tasks <- tasks
 
-let run_after self delay f : event_handle =
+let run_after self delay f : cancel_handle =
   let now = Time.monotonic_time_s () in
   let deadline = now +. delay in
   let rec task =
@@ -47,13 +47,13 @@ let run_after self delay f : event_handle =
       f;
       kind = Once;
       active = true;
-      as_event_handle = { cancel = (fun () -> task.active <- false) };
+      as_cancel_handle = { cancel = (fun () -> task.active <- false) };
     }
   in
   self.tasks <- Task_heap.insert task self.tasks;
-  task.as_event_handle
+  task.as_cancel_handle
 
-let run_every self delay f : event_handle =
+let run_every self delay f : cancel_handle =
   let now = Time.monotonic_time_s () in
   let deadline = now +. delay in
   let rec task =
@@ -62,11 +62,11 @@ let run_every self delay f : event_handle =
       f;
       kind = Every delay;
       active = true;
-      as_event_handle = { cancel = (fun () -> task.active <- false) };
+      as_cancel_handle = { cancel = (fun () -> task.active <- false) };
     }
   in
   self.tasks <- Task_heap.insert task self.tasks;
-  task.as_event_handle
+  task.as_cancel_handle
 
 let rec next (self : t) : tick_res =
   match Task_heap.find_min self.tasks with
@@ -88,7 +88,7 @@ let rec next (self : t) : tick_res =
         task.deadline <- now +. dur;
         self.tasks <- Task_heap.insert task self.tasks);
 
-      Run (task.f, task.as_event_handle)
+      Run (task.f, task.as_cancel_handle)
     ) else
       Wait remaining_time_s
 

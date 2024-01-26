@@ -1,5 +1,5 @@
 open Common_
-open Fuseau_core
+open Utils_
 
 module Sockaddr = struct
   type t = Unix.sockaddr
@@ -60,7 +60,7 @@ module TCP_server = struct
         match Unix.accept sock with
         | client_sock, client_addr ->
           ignore
-            (spawn ~propagate_cancel_to_parent:false (fun () ->
+            (Scheduler.spawn ~propagate_cancel_to_parent:false (fun () ->
                  loop_client client_sock client_addr)
               : _ Fiber.t)
         | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) ->
@@ -71,12 +71,13 @@ module TCP_server = struct
                   [accept] after subscribing to [on_readable]. *)
               let loop = Scheduler.Internal_.ev_loop sched in
               ignore
-                (loop#on_readable sock (fun _ev -> wakeup ()) : event_handle))
+                (loop#on_readable sock (fun _ev -> wakeup ()) : Cancel_handle.t))
       done
     in
 
     let loop_fiber =
-      spawn_as_child_of ~propagate_cancel_to_parent:true sched fiber loop
+      Scheduler.spawn_as_child_of ~propagate_cancel_to_parent:true sched fiber
+        loop
     in
     let finally () =
       stop_ loop_fiber;

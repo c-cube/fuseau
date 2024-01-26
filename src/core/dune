@@ -1,6 +1,7 @@
 
 (library
- (name fuseau_core)
- (public_name fuseau.core)
- (synopsis "Core types for the scheduler of fuseau")
+ (name fuseau)
+ (public_name fuseau)
+ (synopsis "Fuseau: a cooperative concurrency library for OCaml 5")
+ (private_modules common_ utils_)
  (libraries thread-local-storage trace unix mtime mtime.clock.os))

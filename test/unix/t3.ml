@@ -8,7 +8,7 @@ let rec fib n =
     let f1 = Fuseau.spawn (fun () -> fib (n - 1)) in
     let f2 = Fuseau.spawn (fun () -> fib (n - 2)) in
 
-    if n = 9 then Fuseau.sleep 0.000_010;
+    if n = 9 then Fuseau.sleep_s 0.000_010;
     Fuseau.await f1 + Fuseau.await f2
   )
 
@@ -32,7 +32,7 @@ let run () =
               pf "fib30 cancelled with %s" (Fuseau.Exn_bt.show ebt))
         in
 
-        Fuseau.cancel_after 0.002;
+        Fuseau.cancel_after_s 0.002;
         fib 30)
   in
 

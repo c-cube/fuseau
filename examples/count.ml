@@ -8,7 +8,7 @@ let main () =
         Fuseau.spawn @@ fun () ->
         print_endline @@ spf "spawn fiber %d" j;
         for i = 1 to 10 do
-          Fuseau.sleep 0.1;
+          Fuseau.sleep_s 0.1;
           print_endline @@ spf "iter %d (fiber %d)" i j
         done)
   in

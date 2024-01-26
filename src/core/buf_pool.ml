@@ -1,4 +1,4 @@
-open Fuseau_core
+open Common_
 
 type t = bytes Resource_pool.t
 

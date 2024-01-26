@@ -1,5 +1,4 @@
-open Common_
-open Fuseau_core
+open Utils_
 
 let rec read fd buf i len : int =
   if len = 0 then
@@ -11,7 +10,7 @@ let rec read fd buf i len : int =
       let loop = Scheduler.Internal_.ev_loop sched in
       (* wait for FD to be ready *)
       Fiber.Internal_.suspend ~before_suspend:(fun ~wakeup ->
-          ignore (loop#on_readable fd (fun _ev -> wakeup ()) : event_handle));
+          ignore (loop#on_readable fd (fun _ev -> wakeup ()) : Cancel_handle.t));
       read fd buf i len
     | n -> n
   )
@@ -26,7 +25,7 @@ let rec write_once fd buf i len : int =
       let loop = Scheduler.Internal_.ev_loop sched in
       (* wait for FD to be ready *)
       Fiber.Internal_.suspend ~before_suspend:(fun ~wakeup ->
-          ignore (loop#on_writable fd (fun _ev -> wakeup ()) : event_handle));
+          ignore (loop#on_writable fd (fun _ev -> wakeup ()) : Cancel_handle.t));
       write_once fd buf i len
     | n -> n
   )

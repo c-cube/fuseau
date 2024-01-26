@@ -4,7 +4,7 @@ let ( let@ ) = ( @@ )
 let run () =
   let loop = new Fuseau_unix.ev_loop in
   Fuseau.main ~loop @@ fun () ->
-  Fuseau.sleep 0.5;
+  Fuseau.sleep_s 0.5;
   42
 
 let () =

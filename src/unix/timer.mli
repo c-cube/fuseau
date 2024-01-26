@@ -7,11 +7,11 @@ val create : unit -> t
 
 type tick_res =
   | Wait of float
-  | Run of (event_handle -> unit) * event_handle
+  | Run of (cancel_handle -> unit) * cancel_handle
   | Empty
 
 val next : t -> tick_res
-val run_after : t -> float -> (event_handle -> unit) -> event_handle
-val run_every : t -> float -> (event_handle -> unit) -> event_handle
+val run_after : t -> float -> (cancel_handle -> unit) -> cancel_handle
+val run_every : t -> float -> (cancel_handle -> unit) -> cancel_handle
 val has_tasks : t -> bool
 val num_tasks : t -> int

@@ -1,7 +1,9 @@
-(** Abstraction over an event loop *)
+(** Abstraction over an event loop.
 
-type event_handle = { cancel: unit -> unit } [@@unboxed]
-(** An event handle, so we can cancel events *)
+  The event loop type is a pluggable engine for any event loop that
+  provides primitives to schedule timers, wait for {!Unix.file_descr}
+  read- or write-ability, and run a single step with or without blocking.
+*)
 
 (* FIXME: a special method to wakeup from the outside (thread safe).
    E.g. use a hidden FD, like a pipe, and write a byte to it. *)
@@ -16,15 +18,15 @@ class type t =
         block and returns after having processed the available events. *)
 
     method on_readable :
-      Unix.file_descr -> (event_handle -> unit) -> event_handle
+      Unix.file_descr -> (Cancel_handle.t -> unit) -> Cancel_handle.t
     (** [on_readable fd f] creates a new event [ev], and will run [f ev] when
       [fd] becomes readable *)
 
     method on_writable :
-      Unix.file_descr -> (event_handle -> unit) -> event_handle
+      Unix.file_descr -> (Cancel_handle.t -> unit) -> Cancel_handle.t
 
     method on_timer :
-      float -> repeat:bool -> (event_handle -> unit) -> event_handle
+      float -> repeat:bool -> (Cancel_handle.t -> unit) -> Cancel_handle.t
     (** [on_timer delay ~repeat f] runs [f] after [delay].
       @param repeat if true runs [f] every [delay] seconds *)
 

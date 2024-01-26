@@ -1,5 +1,4 @@
-type event_handle = Event_loop.event_handle = { cancel: unit -> unit }
-[@@unboxed]
+type cancel_handle = Cancel_handle.t = { cancel: unit -> unit } [@@unboxed]
 
 type io_mode =
   | Read
@@ -8,8 +7,8 @@ type io_mode =
 module IO_wait = struct
   type t = {
     mutable active: bool;
-    f: event_handle -> unit;
-    as_event_handle: event_handle;
+    f: cancel_handle -> unit;
+    as_cancel_handle: cancel_handle;
   }
   (** A single event, waiting on a unix FD *)
 
@@ -18,7 +17,7 @@ module IO_wait = struct
       {
         active = true;
         f;
-        as_event_handle = { cancel = (fun () -> self.active <- false) };
+        as_cancel_handle = { cancel = (fun () -> self.active <- false) };
       }
     in
     self
@@ -75,7 +74,7 @@ module IO_tbl = struct
     !reads, !writes
 
   let trigger_waiter (io : IO_wait.t) =
-    if io.active then io.f io.as_event_handle
+    if io.active then io.f io.as_cancel_handle
 
   let handle_ready (self : t) (reads : Unix.file_descr list)
       (writes : Unix.file_descr list) : unit =
@@ -121,7 +120,7 @@ class ev_loop : Event_loop.t =
   in
 
   object
-    (* val read_ : (event_handle -> unit) Int_tbl.t = Int_tbl.create 32 *)
+    (* val read_ : (cancel_handle -> unit) Int_tbl.t = Int_tbl.create 32 *)
     method one_step ~block () : unit =
       let delay = run_timer_ _timer in
 
@@ -141,21 +140,21 @@ class ev_loop : Event_loop.t =
       ()
 
     method on_readable
-        : Unix.file_descr -> (event_handle -> unit) -> event_handle =
-      fun fd f : event_handle ->
+        : Unix.file_descr -> (cancel_handle -> unit) -> cancel_handle =
+      fun fd f : cancel_handle ->
         let ev = IO_wait.make f in
         IO_tbl.add_io_wait _io_wait fd Read ev;
-        ev.as_event_handle
+        ev.as_cancel_handle
 
     method on_writable
-        : Unix.file_descr -> (event_handle -> unit) -> event_handle =
-      fun fd f : event_handle ->
+        : Unix.file_descr -> (cancel_handle -> unit) -> cancel_handle =
+      fun fd f : cancel_handle ->
         let ev = IO_wait.make f in
         IO_tbl.add_io_wait _io_wait fd Write ev;
-        ev.as_event_handle
+        ev.as_cancel_handle
 
     method on_timer
-        : float -> repeat:bool -> (event_handle -> unit) -> event_handle =
+        : float -> repeat:bool -> (cancel_handle -> unit) -> cancel_handle =
       fun delay ~repeat f ->
         if repeat then
           Timer.run_every _timer delay f
