@@ -1,10 +1,3 @@
-(** Fuseau core.
-
-    The core library contains the definition of the
-    main scheduler, fibers, switches, and other foundations
-    for cooperative structured concurrency.
-*)
-
 (** {2 Foundations} *)
 
 module Fiber = Fiber
@@ -13,6 +6,8 @@ module Main = Main
 module FLS = FLS
 
 (** {2 IO event loop} *)
+
+exception Inactive = Scheduler.Inactive
 
 module Scheduler = Scheduler
 module Event_loop = Event_loop
@@ -27,7 +22,6 @@ module Cancel_handle = Cancel_handle
 
 module Exn_bt = Exn_bt
 module Time = Time
-module Lock = Lock
 
 (** {2 IO} *)
 
@@ -51,9 +45,12 @@ exception Timeout = Utils_.Timeout
 let await = Fiber.await
 let try_await = Fiber.try_await
 let cancel_after_s = Utils_.cancel_after_s
+let with_cancel_callback = Fiber.with_cancel_callback
+let yield = Fiber.yield
 let spawn = Scheduler.spawn
 let spawn_from_anywhere = Scheduler.spawn_from_anywhere
 let spawn_as_child_of = Scheduler.spawn_as_child_of
 let schedule_micro_task = Scheduler.schedule_micro_task
 let main = Main.main
 let sleep_s = Sleep.sleep_s
+let get_scheduler = Utils_.get_sched "get_scheduler"

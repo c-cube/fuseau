@@ -52,9 +52,12 @@ class type t =
    let timer_count (self : #t) = self#timer_count
 *)
 
-let one_step (self : #t) ~block () = self#one_step ~block ()
-let on_readable (self : #t) fd f = self#on_readable fd f
-let on_writable (self : #t) fd f = self#on_writable fd f
-let on_timer (self : #t) delay ~repeat f = self#on_timer delay ~repeat f
-let fake_io (self : #t) fd = self#fake_io fd
-let has_pending_tasks (self : #t) = self#has_pending_tasks
+let[@inline] one_step (self : #t) ~block () = self#one_step ~block ()
+let[@inline] on_readable (self : #t) fd f = self#on_readable fd f
+let[@inline] on_writable (self : #t) fd f = self#on_writable fd f
+
+let[@inline] on_timer (self : #t) delay ~repeat f =
+  self#on_timer delay ~repeat f
+
+let[@inline] fake_io (self : #t) fd = self#fake_io fd
+let[@inline] has_pending_tasks (self : #t) = self#has_pending_tasks

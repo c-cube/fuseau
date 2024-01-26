@@ -12,6 +12,7 @@ type 'a state = 'a fiber_status =
 
 type 'a t = 'a fiber
 type 'a callback = 'a Types.fiber_callback
+type cancel_callback = Exn_bt.t -> unit
 type any = Types.any_fiber = Any_fiber : _ t -> any [@@unboxed]
 
 let[@inline] peek self = A.get self.state

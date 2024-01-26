@@ -7,9 +7,6 @@ let[@inline] get_sched what () : Scheduler.t =
   | None -> failwith @@ spf "%s must run from inside the fuseau scheduler" what
   | Some s -> s
 
-(** Cancel the current fiber after [delay] seconds, unless
-    the fiber terminates first. The cancellation will use
-    the {!Timeout} exception. *)
 let cancel_after_s (delay : float) =
   let ebt = Exn_bt.get_callstack 15 Timeout in
   let sched = get_sched "sleep" () in

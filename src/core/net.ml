@@ -1,6 +1,18 @@
 open Common_
 open Utils_
 
+module Inet_addr = struct
+  type t = Unix.inet_addr
+
+  let any = Unix.inet_addr_any
+  let loopback = Unix.inet_addr_loopback
+  let show = Unix.string_of_inet_addr
+  let of_string s = try Some (Unix.inet_addr_of_string s) with _ -> None
+
+  let of_string_exn s =
+    try Unix.inet_addr_of_string s with _ -> invalid_arg "Inet_addr.of_string"
+end
+
 module Sockaddr = struct
   type t = Unix.sockaddr
 
@@ -11,7 +23,14 @@ module Sockaddr = struct
 
   let unix s : t = Unix.ADDR_UNIX s
   let inet addr port : t = Unix.ADDR_INET (addr, port)
-  let inet_parse addr port = inet (Unix.inet_addr_of_string addr) port
+
+  let inet_parse addr port =
+    try Some (inet (Unix.inet_addr_of_string addr) port) with _ -> None
+
+  let inet_parse_exn addr port =
+    try inet (Unix.inet_addr_of_string addr) port
+    with _ -> invalid_arg "Sockadd.inet_parse"
+
   let inet_local port = inet Unix.inet_addr_loopback port
   let inet_any port = inet Unix.inet_addr_any port
 end

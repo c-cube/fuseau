@@ -1,5 +1,3 @@
-open Common_
-
 type t = bytes Resource_pool.t
 
 let _default_size = 16 * 1024

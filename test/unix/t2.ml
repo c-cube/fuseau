@@ -20,7 +20,7 @@ let run () =
 
   Trace.message "await both";
   pf "await both\n%!";
-  Fuseau.Fiber.await f1 + Fuseau.Fiber.await f2
+  Fuseau.await f1 + Fuseau.await f2
 
 let () =
   let@ () = Trace_tef.with_setup () in

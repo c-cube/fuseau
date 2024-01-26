@@ -27,7 +27,7 @@ let run () =
   let fib30 =
     Fuseau.spawn ~name:"fib30" ~propagate_cancel_to_parent:false (fun () ->
         let@ () =
-          Fuseau.Fiber.with_cancel_callback (fun ebt ->
+          Fuseau.with_cancel_callback (fun ebt ->
               Trace.message "fib30 cancelled";
               pf "fib30 cancelled with %s" (Fuseau.Exn_bt.show ebt))
         in
