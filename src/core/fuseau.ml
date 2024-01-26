@@ -25,7 +25,7 @@ module Time = Time
 
 (** {2 IO} *)
 
-module IO = IO
+module IO_unix = IO_unix
 module IO_in = IO_in
 module IO_out = IO_out
 

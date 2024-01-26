@@ -132,7 +132,7 @@ let of_unix_fd ?(close_noerr = false) ?(buf = Bytes.create _default_buf_size)
 
   let refill () =
     buf_off := 0;
-    buf_len := IO.read fd buf 0 (Bytes.length buf)
+    buf_len := IO_unix.read fd buf 0 (Bytes.length buf)
   in
 
   object

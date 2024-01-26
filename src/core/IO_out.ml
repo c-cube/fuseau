@@ -32,7 +32,7 @@ let of_unix_fd ?(close_noerr = false) ?(buf = Bytes.create _default_buf_size) fd
 
   let flush () =
     if !buf_off > 0 then (
-      IO.write fd buf 0 !buf_off;
+      IO_unix.write fd buf 0 !buf_off;
       buf_off := 0
     )
   in

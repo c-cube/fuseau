@@ -215,7 +215,7 @@ module Cancel_handle = Cancel_handle
 (** {2 IO} *)
 
 (** Low level Unix IOs *)
-module IO : sig
+module IO_unix : sig
   type file_descr = Unix.file_descr
 
   val read : file_descr -> bytes -> int -> int -> int
