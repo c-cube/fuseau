@@ -28,7 +28,7 @@ let run () =
         let@ () =
           Fuseau.with_cancel_callback (fun ebt ->
               Trace.message "fib30 cancelled";
-              pf "fib30 cancelled with %s" (Fuseau.Exn_bt.show ebt))
+              pf "fib30 cancelled with %s\n%!" (Fuseau.Exn_bt.show ebt))
         in
 
         Fuseau.cancel_after_s 0.002;
