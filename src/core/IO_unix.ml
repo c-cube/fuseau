@@ -12,7 +12,11 @@ let rec read fd buf i len : int =
       let loop = Scheduler.Internal_.ev_loop sched in
       (* wait for FD to be ready *)
       Fiber.Internal_.suspend ~before_suspend:(fun ~wakeup ->
-          ignore (loop#on_readable fd (fun _ev -> wakeup ()) : Cancel_handle.t));
+          ignore
+            (loop#on_readable fd (fun ev ->
+                 wakeup ();
+                 Cancel_handle.cancel ev)
+              : Cancel_handle.t));
       read fd buf i len
     | n -> n
   )
@@ -27,7 +31,11 @@ let rec write_once fd buf i len : int =
       let loop = Scheduler.Internal_.ev_loop sched in
       (* wait for FD to be ready *)
       Fiber.Internal_.suspend ~before_suspend:(fun ~wakeup ->
-          ignore (loop#on_writable fd (fun _ev -> wakeup ()) : Cancel_handle.t));
+          ignore
+            (loop#on_writable fd (fun ev ->
+                 wakeup ();
+                 Cancel_handle.cancel ev)
+              : Cancel_handle.t));
       write_once fd buf i len
     | n -> n
   )

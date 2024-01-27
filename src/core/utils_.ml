@@ -17,11 +17,14 @@ let cancel_after_s (delay : float) =
     | Some f -> f
   in
 
-  let cancel _ = Fiber.Internal_.cancel_any fiber ebt in
+  let cancel ev =
+    Fiber.Internal_.cancel_any fiber ebt;
+    Cancel_handle.cancel ev
+  in
 
   if delay > 50e-9 then (
     let loop = Scheduler.Internal_.ev_loop sched in
     ignore
       (Event_loop.on_timer loop ~repeat:false delay cancel : Cancel_handle.t)
   ) else
-    cancel ()
+    cancel Cancel_handle.dummy
