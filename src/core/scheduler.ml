@@ -11,6 +11,7 @@ type t = {
   ev_loop: Event_loop.t;
   mutable cur_fiber: Fiber.any option;  (** Currently running fiber *)
   mutable cur_span: Trace.span;  (** Span for the current fiber, if any *)
+  mutable n_suspended: int;  (** Number of suspended tasks. *)
   task_q: task Queue.t;  (** Queue of regular tasks *)
   next_tick_tasks: task Queue.t;  (** Tasks for the next tick *)
   micro_tasks_q: microtask Queue.t;  (** Microtasks, run almost immediately *)
@@ -24,7 +25,7 @@ let k_current_scheduler : t option ref TLS.key =
 
 let () =
   (* to get current fiber, just get current scheduler *)
-  Fiber.Internal_.get_current :=
+  Fiber.get_current :=
     fun () ->
       let cur_sched = TLS.get k_current_scheduler in
       match !cur_sched with
@@ -60,16 +61,12 @@ let[@inline] has_pending_tasks self : bool =
     && Queue.is_empty self.next_tick_tasks
     && Lock.map_no_exn Queue.is_empty self.outside_q)
 
-let[@inline] n_queued_tasks_ (self : t) : int =
+let[@inline] has_suspended_tasks self : bool = self.n_suspended > 0
+
+let[@inline] n_queued_tasks (self : t) : int =
   Queue.length self.task_q + Queue.length self.next_tick_tasks
 
-module Internal_ = struct
-  let has_pending_tasks = has_pending_tasks
-  let k_current_scheduler = k_current_scheduler
-  let check_active = check_active_
-  let n_queued_tasks = n_queued_tasks_
-  let[@inline] ev_loop self = self.ev_loop
-end
+let[@inline] ev_loop self = self.ev_loop
 
 let create ~ev_loop () : t =
   {
@@ -77,8 +74,9 @@ let create ~ev_loop () : t =
     cur_fiber = None;
     cur_span = 0L;
     task_q = Queue.create ();
+    n_suspended = 0;
     next_tick_tasks = Queue.create ();
-    root_fiber = Any_fiber (Fiber.Internal_.create ());
+    root_fiber = Any_fiber (Fiber.create ());
     micro_tasks_q = Queue.create ();
     outside_q = Lock.create @@ Queue.create ();
     n_tasks = 0;
@@ -87,7 +85,7 @@ let create ~ev_loop () : t =
 let dispose (self : t) : unit =
   (* cancel the main task *)
   let ebt = Exn_bt.get_callstack 15 Exit in
-  Fiber.Internal_.cancel_any self.root_fiber ebt
+  Fiber.cancel_any self.root_fiber ebt
 
 let[@inline] trace_enter_fiber_ (self : t) (fiber : _ Fiber.t) =
   if fiber.name <> "" then
@@ -121,28 +119,24 @@ let spawn ?name ?(propagate_cancel_to_parent = true) (f : unit -> 'a) :
     | Some s -> s
   in
 
-  let fiber = Fiber.Internal_.create ?name () in
-  Fiber.Internal_.add_child
-    ~protected:(not propagate_cancel_to_parent)
-    parent fiber;
+  let fiber = Fiber.create ?name () in
+  Fiber.add_child ~protected:(not propagate_cancel_to_parent) parent fiber;
   schedule_ self (T_start (fiber, f));
   fiber
 
 let spawn_as_child_of ?name ?(propagate_cancel_to_parent = true) (self : t)
     (parent : _ Fiber.t) f : _ Fiber.t =
   check_active_ self;
-  let fiber = Fiber.Internal_.create ?name () in
-  Fiber.Internal_.add_child
-    ~protected:(not propagate_cancel_to_parent)
-    parent fiber;
+  let fiber = Fiber.create ?name () in
+  Fiber.add_child ~protected:(not propagate_cancel_to_parent) parent fiber;
   schedule_ self (T_start (fiber, f));
   fiber
 
 let spawn_from_anywhere ?name (self : t) f : _ Fiber.t =
   check_active_ self;
   let (Any_fiber parent) = self.root_fiber in
-  let fiber = Fiber.Internal_.create ?name () in
-  Fiber.Internal_.add_child ~protected:true parent fiber;
+  let fiber = Fiber.create ?name () in
+  Fiber.add_child ~protected:true parent fiber;
   Lock.with_ self.outside_q (fun q -> Queue.push (T_start (fiber, f)) q);
   fiber
 
@@ -151,11 +145,11 @@ let run_task_and_resolve_fiber (self : t) fiber f =
   try
     let r = f () in
     trace_exit_fiber_ self;
-    Fiber.Internal_.resolve fiber r
+    Fiber.resolve fiber r
   with exn ->
     let bt = Printexc.get_raw_backtrace () in
     trace_exit_fiber_ self;
-    Fiber.Internal_.cancel fiber (Exn_bt.make exn bt)
+    Fiber.cancel fiber (Exn_bt.make exn bt)
 
 let run_task (self : t) (task : task) : unit =
   match task with
@@ -167,8 +161,10 @@ let run_task (self : t) (task : task) : unit =
         Some
           (fun k ->
             trace_exit_fiber_ self;
+            self.n_suspended <- 1 + self.n_suspended;
             let wakeup () =
               (* Trace.message "wakeup suspended fiber"; *)
+              self.n_suspended <- self.n_suspended - 1;
               schedule_ self (T_cont (Any_fiber fiber, k, ()))
             in
             before_suspend ~wakeup)

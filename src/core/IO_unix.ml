@@ -9,9 +9,9 @@ let rec read fd buf i len : int =
     match Unix.read fd buf i len with
     | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) ->
       let sched = get_sched "read" () in
-      let loop = Scheduler.Internal_.ev_loop sched in
+      let loop = Scheduler.ev_loop sched in
       (* wait for FD to be ready *)
-      Fiber.Internal_.suspend ~before_suspend:(fun ~wakeup ->
+      Fiber.suspend ~before_suspend:(fun ~wakeup ->
           ignore
             (loop#on_readable fd (fun ev ->
                  wakeup ();
@@ -28,9 +28,9 @@ let rec write_once fd buf i len : int =
     match Unix.write fd buf i len with
     | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) ->
       let sched = get_sched "write_once" () in
-      let loop = Scheduler.Internal_.ev_loop sched in
+      let loop = Scheduler.ev_loop sched in
       (* wait for FD to be ready *)
-      Fiber.Internal_.suspend ~before_suspend:(fun ~wakeup ->
+      Fiber.suspend ~before_suspend:(fun ~wakeup ->
           ignore
             (loop#on_writable fd (fun ev ->
                  wakeup ();

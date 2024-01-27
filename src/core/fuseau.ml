@@ -54,3 +54,7 @@ let schedule_micro_task = Scheduler.schedule_micro_task
 let main = Main.main
 let sleep_s = Sleep.sleep_s
 let get_scheduler = Utils_.get_sched "get_scheduler"
+
+module Private_ = struct
+  let suspend = Fiber.suspend
+end

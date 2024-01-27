@@ -494,3 +494,12 @@ val main : loop:Event_loop.t -> (unit -> 'a) -> 'a
 
     @param loop if provided, this event loop is used
     during the computation. *)
+
+(**/**)
+
+(** Implementation details that should only be used by experts *)
+module Private_ : sig
+  val suspend : before_suspend:(wakeup:(unit -> unit) -> unit) -> unit
+end
+
+(**/**)

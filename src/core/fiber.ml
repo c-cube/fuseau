@@ -152,29 +152,26 @@ let add_child ~protected (self : _ fiber) (child : _ fiber) =
 
 exception Cancelled of Exn_bt.t
 
-module Internal_ = struct
-  let create ?(name = "") () =
-    let id = Fiber_handle.fresh () in
-    {
-      state =
-        A.make @@ Wait { waiters = []; children = FM.empty; on_cancel = [] };
-      id;
-      name;
-      fls = [||];
-    }
+let create ?(name = "") () =
+  let id = Fiber_handle.fresh () in
+  {
+    state = A.make @@ Wait { waiters = []; children = FM.empty; on_cancel = [] };
+    id;
+    name;
+    fls = [||];
+  }
 
-  let resolve = resolve
-  let cancel = fail_fiber
-  let add_child = add_child
-  let[@inline] cancel_any (Any_fiber f) ebt = cancel f ebt
+let resolve = resolve
+let cancel = fail_fiber
+let add_child = add_child
+let[@inline] cancel_any (Any_fiber f) ebt = cancel f ebt
 
-  let[@inline] suspend ~before_suspend =
-    Effect.perform @@ Effects.Suspend { before_suspend }
+let[@inline] suspend ~before_suspend =
+  Effect.perform @@ Effects.Suspend { before_suspend }
 
-  (** A helper to get around circular dependencies. This is implemented via
+(** A helper to get around circular dependencies. This is implemented via
       TLS, looking in the current thread's scheduler (if any). *)
-  let get_current : (unit -> any option) ref = ref (fun () -> None)
-end
+let get_current : (unit -> any option) ref = ref (fun () -> None)
 
 let add_cancel_cb_ (self : _ t) cb =
   while
@@ -206,7 +203,7 @@ let remove_top_cancel_cb_ (self : _ t) =
   done
 
 let with_cancel_callback cb (k : unit -> 'a) : 'a =
-  match !Internal_.get_current () with
+  match !get_current () with
   | None -> failwith "with_cancel_callback` must be called from inside a fiber"
   | Some (Any_fiber f) ->
     add_cancel_cb_ f cb;
@@ -226,7 +223,7 @@ let await self =
   | Fail ebt -> Exn_bt.raise ebt
   | Wait _ ->
     (* polling point *)
-    (match !Internal_.get_current () with
+    (match !get_current () with
     | None ->
       Trace.message "await outside of fiber";
       failwith "`await` must be called from inside a fiber"
@@ -247,7 +244,7 @@ let try_await self =
   | Fail ebt -> Error ebt
   | Wait _ ->
     (* polling point *)
-    (match !Internal_.get_current () with
+    (match !get_current () with
     | None -> failwith "`await` must be called from inside a fiber"
     | Some (Any_fiber f) ->
       (match A.get f.state with
@@ -266,7 +263,7 @@ let try_await self =
 
 let yield () =
   (* polling point *)
-  (match !Internal_.get_current () with
+  (match !get_current () with
   | None -> failwith "yield` must be called from inside a fiber"
   | Some (Any_fiber f) ->
     (match A.get f.state with
@@ -275,3 +272,6 @@ let yield () =
     | Wait _ -> ()));
 
   Effect.perform Effects.Yield
+
+let[@inline] suspend ~before_suspend : unit =
+  Effect.perform @@ Effects.Suspend { before_suspend }

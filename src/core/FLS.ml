@@ -27,7 +27,7 @@ let[@inline never] resize_ (fib : _ Fiber.t) n =
 
 (** Access current fiber, or fail *)
 let[@inline] cur_fiber_ () : any_fiber =
-  match !Fiber.Internal_.get_current () with
+  match !Fiber.get_current () with
   | Some f -> f
   | None -> failwith "FLS: must be run from inside a fiber"
 

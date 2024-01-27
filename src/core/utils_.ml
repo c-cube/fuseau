@@ -3,7 +3,7 @@ open Common_
 exception Timeout
 
 let[@inline] get_sched what () : Scheduler.t =
-  match !(TLS.get Scheduler.Internal_.k_current_scheduler) with
+  match !(TLS.get Scheduler.k_current_scheduler) with
   | None -> failwith @@ spf "%s must run from inside the fuseau scheduler" what
   | Some s -> s
 
@@ -12,18 +12,18 @@ let cancel_after_s (delay : float) =
   let sched = get_sched "sleep" () in
 
   let fiber =
-    match !Fiber.Internal_.get_current () with
+    match !Fiber.get_current () with
     | None -> failwith "cancel_after must be called from a fiber"
     | Some f -> f
   in
 
   let cancel ev =
-    Fiber.Internal_.cancel_any fiber ebt;
+    Fiber.cancel_any fiber ebt;
     Cancel_handle.cancel ev
   in
 
   if delay > 50e-9 then (
-    let loop = Scheduler.Internal_.ev_loop sched in
+    let loop = Scheduler.ev_loop sched in
     ignore
       (Event_loop.on_timer loop ~repeat:false delay cancel : Cancel_handle.t)
   ) else

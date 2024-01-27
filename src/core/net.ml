@@ -42,7 +42,7 @@ module TCP_server = struct
 
   let stop_ fiber =
     let ebt = Exn_bt.get Stop in
-    Fiber.Internal_.cancel fiber ebt
+    Fiber.cancel fiber ebt
 
   let stop self = stop_ self.fiber
   let join self = Fiber.await self.fiber
@@ -55,7 +55,7 @@ module TCP_server = struct
     Unix.setsockopt sock Unix.SO_REUSEADDR true;
     Unix.listen sock 32;
 
-    let fiber = Fiber.Internal_.create () in
+    let fiber = Fiber.create () in
     let self = { fiber } in
 
     let sched = get_sched "tcp_server.with_serve" () in
@@ -84,11 +84,11 @@ module TCP_server = struct
               : _ Fiber.t)
         | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) ->
           (* suspend *)
-          Fiber.Internal_.suspend ~before_suspend:(fun ~wakeup ->
+          Fiber.suspend ~before_suspend:(fun ~wakeup ->
               (* FIXME: possible race condition: the socket became readable
                   in the mid-time and we won't get notified. We need to call
                   [accept] after subscribing to [on_readable]. *)
-              let loop = Scheduler.Internal_.ev_loop sched in
+              let loop = Scheduler.ev_loop sched in
               ignore
                 (loop#on_readable sock (fun _ev -> wakeup ()) : Cancel_handle.t))
       done
