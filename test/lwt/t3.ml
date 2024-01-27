@@ -31,7 +31,7 @@ let run () =
               pf "fib30 cancelled with %s\n%!" (Fuseau.Exn_bt.show ebt))
         in
 
-        Fuseau.cancel_after_s 0.002;
+        Fuseau.cancel_after_s 0.03;
         fib 30)
   in
 

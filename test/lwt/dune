@@ -1,4 +1,4 @@
 
 (tests
-  (names t1 t2 t3)
-  (libraries fuseau fuseau-lwt trace trace-tef))
+  (names t1 t2 t3 t_interop1)
+  (libraries fuseau fuseau-lwt lwt trace trace-tef))

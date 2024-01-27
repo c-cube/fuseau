@@ -1,0 +1,11 @@
+start
+[simple] wait for fut2
+[both] wait for fut1
+lwt sleeper2 is done!
+[simple] got 41 from fut2
+lwt sleeper1 is done!
+[both] wait for fut2
+[both] fiber done
+done
+result: 42
+exit
