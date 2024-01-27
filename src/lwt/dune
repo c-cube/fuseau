@@ -1,0 +1,7 @@
+
+(library
+  (name fuseau_lwt)
+  (public_name fuseau-lwt)
+  (synopsis "Event loop for Fuseau, using a Lwt_unix engine")
+  (flags :standard -open Fuseau)
+  (libraries fuseau trace.core unix lwt lwt.unix))

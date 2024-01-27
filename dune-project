@@ -32,4 +32,16 @@
  (tags
   (await effects event-loop thread-local-storage)))
 
+(package
+ (name fuseau-lwt)
+ (synopsis "Lwt backend for Fuseau")
+ (depends
+  dune
+  (trace (>= 0.6))
+  lwt
+  base-unix
+  (fuseau (= :version)))
+ (tags
+  (fuseau lwt)))
+
 ; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project
