@@ -233,9 +233,7 @@ let await self =
       | _ -> ()));
 
     (* wait for resolution *)
-    Effect.perform
-    @@ Effects.Suspend
-         { before_suspend = (fun ~wakeup -> on_res self (fun _ -> wakeup ())) };
+    suspend ~before_suspend:(fun ~wakeup -> on_res self (fun _ -> wakeup ()));
     get_exn_ self
 
 let try_await self =

@@ -198,6 +198,7 @@ let run_task (self : t) (task : task) : unit =
       ED.continue k x)
 
 let run_iteration (self : t) : unit =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau.scheduler.iteration" in
   check_active_ self;
 
   (* move all pending tasks to [task_q] *)

@@ -23,6 +23,10 @@ module Cancel_handle = Cancel_handle
 module Exn_bt = Exn_bt
 module Time = Time
 
+(** {2 Synchronization} *)
+
+module Chan = Chan
+
 (** {2 IO} *)
 
 module IO_unix = IO_unix

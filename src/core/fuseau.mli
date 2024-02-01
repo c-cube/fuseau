@@ -20,6 +20,41 @@ module Fiber_handle : sig
   module Map : Map.S with type key = t
 end
 
+(** {2 Synchronization} *)
+
+(** Basic channels *)
+module Chan : sig
+  type 'a t
+  (** Basic channel for values of type 'a *)
+
+  val is_empty : _ t -> bool
+
+  val size : _ t -> int
+  (** Current number of items in the channel *)
+
+  val create : ?max_size:int -> unit -> 'a t
+  (** New channel.
+      @param max_size if specified, writers will block when trying
+      to push into a channel *)
+
+  exception Closed
+
+  val close : _ t -> unit
+  (** Close the channel. Calls to {!receive_exn} will still succeed
+      as long as items remain in the channel, until the channel
+      is entirely drained; then they fail with {!Closed}. *)
+
+  val receive_exn : 'a t -> 'a
+  (** [receive_exn c] receives an item from the channel.
+      Suspends if the channel is empty and non-closed.
+      @raise Closed if the channel is empty and closed *)
+
+  val send : 'a t -> 'a -> unit
+  (** [send c x] sends [x] over the channel [c].
+      This might suspend the current fiber if the channel is full.
+      @raise Closed if [c] is closed. *)
+end
+
 (** {2 Utils} *)
 
 (** Exception with backtrace *)
