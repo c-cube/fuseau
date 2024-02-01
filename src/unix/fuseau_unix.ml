@@ -76,14 +76,16 @@ module IO_tbl = struct
   let trigger_waiter (io : IO_wait.t) =
     if io.active then io.f io.as_cancel_handle
 
-  let handle_ready (self : t) (reads : Unix.file_descr list)
+  let handle_ready ~ignore_read (self : t) (reads : Unix.file_descr list)
       (writes : Unix.file_descr list) : unit =
     List.iter
       (fun fd ->
-        let per_fd = Hashtbl.find self.tbl fd in
-        List.iter trigger_waiter per_fd.reads;
-        self.n_read <- self.n_read - List.length per_fd.reads;
-        per_fd.reads <- [])
+        if fd <> ignore_read then (
+          let per_fd = Hashtbl.find self.tbl fd in
+          List.iter trigger_waiter per_fd.reads;
+          self.n_read <- self.n_read - List.length per_fd.reads;
+          per_fd.reads <- []
+        ))
       reads;
 
     List.iter
@@ -114,6 +116,13 @@ let run_timer_ (t : Timer.t) =
 class ev_loop : Event_loop.t =
   let _timer = Timer.create () in
   let _io_wait : IO_tbl.t = IO_tbl.create () in
+  let _in_blocking_section = ref false in
+
+  let _magic_pipe_read, _magic_pipe_write = Unix.pipe ~cloexec:true () in
+  let () =
+    Unix.set_nonblock _magic_pipe_read;
+    Unix.set_nonblock _magic_pipe_write
+  in
 
   let[@inline] has_pending_tasks () =
     _io_wait.n_read > 0 || _io_wait.n_write > 0 || Timer.has_tasks _timer
@@ -134,8 +143,12 @@ class ev_loop : Event_loop.t =
 
       let reads, writes = IO_tbl.prepare_select _io_wait in
       if has_pending_tasks () then (
-        let reads, writes, _ = Unix.select reads writes [] delay in
-        IO_tbl.handle_ready _io_wait reads writes
+        _in_blocking_section := true;
+        let reads, writes, _ =
+          Unix.select (_magic_pipe_read :: reads) writes [] delay
+        in
+        _in_blocking_section := false;
+        IO_tbl.handle_ready ~ignore_read:_magic_pipe_read _io_wait reads writes
       );
       ()
 
@@ -160,6 +173,12 @@ class ev_loop : Event_loop.t =
           Timer.run_every _timer delay f
         else
           Timer.run_after _timer delay f
+
+    method interrupt_if_in_blocking_section =
+      if !_in_blocking_section then (
+        let b = Bytes.create 1 in
+        ignore (Unix.write _magic_pipe_write b 0 1 : int)
+      )
 
     (* TODO: remove?? *)
     method fake_io : Unix.file_descr -> unit = assert false

@@ -13,6 +13,8 @@ open struct
 end
 
 class ev_loop (engine : Lwt_engine.t) : Event_loop.t =
+  let _in_blocking_section = ref false in
+  let _promise = ref (snd @@ Lwt.wait ()) in
   object
     method fake_io fd = engine#fake_io fd
 
@@ -36,29 +38,33 @@ class ev_loop (engine : Lwt_engine.t) : Event_loop.t =
           ~data:(fun () -> [ "block", `Bool block ])
       in
       Lwt.wakeup_paused ();
-      engine#iter block
+      _in_blocking_section := true;
+      engine#iter block;
+      _in_blocking_section := false
     (* Printf.printf "lwt one step done %a\n%!" _pp_pending engine *)
+
+    method interrupt_if_in_blocking_section =
+      if !_in_blocking_section then (
+        (* immediate wakeup *)
+        (* Printf.eprintf "WAKEUP LWT\n%!"; *)
+        (* _in_blocking_section := false; *)
+        Lwt.wakeup !_promise ();
+        _promise := snd @@ Lwt.wait ();
+        ()
+      )
   end
 
-(* TODO:
-   - [spawn_as_lwt : (unit -> 'a) -> 'a Lwt.t]
-     (creates a lwt/lwt-promise, spawns a fiber that eventually fulfill promise,
-       return lwt)
-
-   - [spawn_as_lwt_as_child_of : _ fiber -> (unit -> 'a) -> 'a Lwt.t]
-       same but with explicit ownership
-
-   - [wait_fiber : 'a Fiber.t -> 'a Lwt.t]
-*)
-
-(** The global loop using {!Lwt_engine.get()} *)
-let create () : Event_loop.t =
-  let engine : Lwt_engine.t = Lwt_engine.get () in
-  new ev_loop engine
-
 let main (f : unit -> 'a) : 'a =
-  let loop = create () in
-  Fuseau.main ~loop f
+  let engine : Lwt_engine.t = Lwt_engine.get () in
+  let loop = new ev_loop engine in
+  try
+    let x = Fuseau.main ~loop f in
+    engine#destroy;
+    x
+  with e ->
+    let bt = Printexc.get_raw_backtrace () in
+    engine#destroy;
+    Printexc.raise_with_backtrace e bt
 
 let await_lwt (fut : _ Lwt.t) =
   match Lwt.poll fut with

@@ -165,7 +165,9 @@ let run_task (self : t) (task : task) : unit =
             let wakeup () =
               (* Trace.message "wakeup suspended fiber"; *)
               self.n_suspended <- self.n_suspended - 1;
-              schedule_ self (T_cont (Any_fiber fiber, k, ()))
+              schedule_ self (T_cont (Any_fiber fiber, k, ()));
+              (* make sure we're not in the event loop, waiting for sth else *)
+              Event_loop.interrupt_if_in_blocking_section self.ev_loop
             in
             before_suspend ~wakeup)
       | Effects.Yield ->

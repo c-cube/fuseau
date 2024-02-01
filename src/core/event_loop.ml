@@ -33,6 +33,9 @@ class type t =
     method fake_io : Unix.file_descr -> unit
     (** Simulate activity on the FD *)
 
+    method interrupt_if_in_blocking_section : unit
+    (** If run from inside the event loop when it's waiting, wakes the event loop up *)
+
     method has_pending_tasks : bool
   end
 
@@ -61,3 +64,6 @@ let[@inline] on_timer (self : #t) delay ~repeat f =
 
 let[@inline] fake_io (self : #t) fd = self#fake_io fd
 let[@inline] has_pending_tasks (self : #t) = self#has_pending_tasks
+
+let[@inline] interrupt_if_in_blocking_section (self : #t) : unit =
+  self#interrupt_if_in_blocking_section
