@@ -272,6 +272,3 @@ let yield () =
     | Wait _ -> ()));
 
   Effect.perform Effects.Yield
-
-let[@inline] suspend ~before_suspend : unit =
-  Effect.perform @@ Effects.Suspend { before_suspend }

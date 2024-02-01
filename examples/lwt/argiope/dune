@@ -1,0 +1,4 @@
+
+(executable
+  (name argiope)
+  (libraries containers uri lambdasoup lwt ezcurl-lwt fuseau fuseau-lwt))
