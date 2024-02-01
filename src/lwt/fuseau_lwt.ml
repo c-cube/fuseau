@@ -1,5 +1,7 @@
 include Fuseau
 
+let ( let@ ) = ( @@ )
+
 open struct
   let[@inline] conv_handle (ev : Lwt_engine.event) : Cancel_handle.t =
     let cancel () = Lwt_engine.stop_event ev in
@@ -29,6 +31,10 @@ class ev_loop (engine : Lwt_engine.t) : Event_loop.t =
 
     method one_step ~block () =
       (* Printf.printf "lwt one step block=%b %a\n%!" block _pp_pending engine; *)
+      let@ _sp =
+        Trace_core.with_span ~__FILE__ ~__LINE__ "fuseau-lwt.one-step"
+          ~data:(fun () -> [ "block", `Bool block ])
+      in
       Lwt.wakeup_paused ();
       engine#iter block
     (* Printf.printf "lwt one step done %a\n%!" _pp_pending engine *)
