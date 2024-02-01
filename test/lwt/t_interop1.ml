@@ -1,8 +1,10 @@
+module F = Fuseau_lwt
+
 let pf = Printf.printf
 let ( let@ ) = ( @@ )
 
 let main () =
-  Fuseau_lwt.main @@ fun () ->
+  F.main @@ fun () ->
   pf "start\n%!";
 
   let fut1 =
@@ -20,25 +22,25 @@ let main () =
   in
 
   let simple_wait =
-    Fuseau.spawn ~name:"fib_wait_2" @@ fun () ->
+    F.spawn ~name:"fib_wait_2" @@ fun () ->
     pf "[simple] wait for fut2\n%!";
-    let _y = Fuseau_lwt.await fut2 in
+    let _y = F.await_lwt fut2 in
     pf "[simple] got %d from fut2\n%!" _y;
     ()
   in
 
   let fib_wait_both =
-    Fuseau.spawn ~name:"fib_wait_both" @@ fun () ->
+    F.spawn ~name:"fib_wait_both" @@ fun () ->
     pf "[both] wait for fut1\n%!";
-    let x = Fuseau_lwt.await fut1 in
+    let x = F.await_lwt fut1 in
     pf "[both] wait for fut2\n%!";
-    let y = Fuseau_lwt.await fut2 in
+    let y = F.await_lwt fut2 in
     pf "[both] fiber done\n%!";
     x + y
   in
 
-  let res = Fuseau.await fib_wait_both in
-  Fuseau.await simple_wait;
+  let res = F.await fib_wait_both in
+  F.await simple_wait;
 
   Trace.message "done";
   pf "done\n%!";

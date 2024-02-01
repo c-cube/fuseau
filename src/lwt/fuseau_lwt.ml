@@ -1,3 +1,5 @@
+include Fuseau
+
 open struct
   let[@inline] conv_handle (ev : Lwt_engine.event) : Cancel_handle.t =
     let cancel () = Lwt_engine.stop_event ev in
@@ -17,7 +19,6 @@ class ev_loop (engine : Lwt_engine.t) : Event_loop.t =
       || engine#timer_count > 0
 
     method on_readable fd f : Cancel_handle.t =
-      Printf.printf "on readable++\n%!";
       engine#on_readable fd (fun ev -> f (conv_handle ev)) |> conv_handle
 
     method on_writable fd f : Cancel_handle.t =
@@ -53,7 +54,7 @@ let main (f : unit -> 'a) : 'a =
   let loop = create () in
   Fuseau.main ~loop f
 
-let await (fut : _ Lwt.t) =
+let await_lwt (fut : _ Lwt.t) =
   match Lwt.poll fut with
   | Some x -> x
   | None ->
