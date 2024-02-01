@@ -1,4 +1,5 @@
 module F = Fuseau_lwt
+module Trace = Trace_core
 module Str_set = CCSet.Make (String)
 
 module Uri_tbl = CCHashtbl.Make (struct
@@ -7,12 +8,15 @@ module Uri_tbl = CCHashtbl.Make (struct
   let hash u = Hashtbl.hash (to_string u)
 end)
 
+let ( let@ ) = ( @@ )
+let spf = Printf.sprintf
 let verbose_ = ref 0
 
 module Run = struct
   type t = {
     domains: Str_set.t; (* domains to recursively crawl *)
-    tasks: Uri.t Queue.t;
+    mutable in_flight: int;
+    tasks: Uri.t F.Chan.t;
     default_host: string;
     max: int;
     seen: unit Uri_tbl.t; (* already explored *)
@@ -25,11 +29,10 @@ module Run = struct
     let u = Uri.canonicalize u in
     if not @@ Uri_tbl.mem self.seen u then (
       Uri_tbl.add self.seen u ();
-      Queue.push u self.tasks
+      try F.Chan.send self.tasks u with F.Chan.Closed -> ()
     )
 
   let make ~j ~domains ~default_host ~max start : t =
-    let tasks = Queue.create () in
     (* include the domains of [start] in [domains] *)
     let domains =
       List.fold_left
@@ -44,7 +47,8 @@ module Run = struct
         domains;
         j;
         max;
-        tasks;
+        in_flight = 0;
+        tasks = F.Chan.create ~max_size:10_000 ();
         default_host;
         seen = Uri_tbl.create 256;
         bad = [];
@@ -57,6 +61,7 @@ module Run = struct
   let bad_code c = c >= 400
 
   let find_urls (body : string) : Uri.t list =
+    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "argiope.find-urls" in
     let body = Soup.parse body in
     let open Soup.Infix in
     let nodes = body $$ "a[href]" in
@@ -68,76 +73,109 @@ module Run = struct
         with _ -> l)
       [] nodes
 
-  let worker (self : t) : unit =
+  let check_if_done_ self =
+    Printf.eprintf "CHECK: inflight=%d size=%d\n%!" self.in_flight
+      (F.Chan.size self.tasks);
+    if self.in_flight = 0 && F.Chan.is_empty self.tasks then
+      F.Chan.close self.tasks
+
+  let process_task (self : t) ~idx ~client (uri : Uri.t) : unit =
+    self.in_flight <- 1 + self.in_flight;
+    if !verbose_ > 0 then
+      Printf.eprintf "[w%d] crawl %s\n%!" idx (Uri.to_string uri);
+
+    (* fetch URL (only 500kb) *)
+    self.n <- 1 + self.n;
+    let resp =
+      let fut =
+        Ezcurl_lwt.get ~client ~range:"0-500000" ~url:(Uri.to_string uri) ()
+      in
+      let@ () = Fuseau.with_cancel_callback (fun _ -> Lwt.cancel fut) in
+
+      F.await_lwt fut
+    in
+
+    (* TODO: use moonpool to parse in the background *)
+    (match resp with
+    | Ok { Ezcurl_lwt.code; body; _ } ->
+      if !verbose_ > 1 then
+        Printf.eprintf "[w%d] got code=%d body=%dB from %s\n%!" idx code
+          (String.length body) (Uri.to_string uri);
+      if bad_code code then (
+        if !verbose_ > 1 then
+          Printf.eprintf "[w%d] bad code when fetching %s: %d\n%!" idx
+            (Uri.to_string uri) code;
+        self.bad <- uri :: self.bad (* bad URL! *)
+      ) else (
+        (* if !verbose_ then Printf.eprintf "body for %s:\n%s\n" (Uri.to_string uri) body; *)
+        let cur_host = Uri.host_with_default ~default:self.default_host uri in
+        let uris = find_urls body in
+        List.iter
+          (fun uri' ->
+            match Uri.host uri' with
+            | Some h when Str_set.mem h self.domains ->
+              (* follow this link *)
+              if !verbose_ > 1 then
+                Printf.eprintf "[w%d] follow link to %s\n%!" idx
+                  (Uri.to_string uri');
+              push_task self uri'
+            | Some _ -> ()
+            | None ->
+              (* relative URL, make it absolute *)
+              let uri' = Uri.with_host uri' (Some cur_host) in
+              let uri' = Uri.with_port uri' (Uri.port uri) in
+              let uri' = Uri.with_scheme uri' (Uri.scheme uri) in
+              if !verbose_ > 1 then
+                Printf.eprintf "[w%d] follow link to %s\n%!" idx
+                  (Uri.to_string uri');
+              push_task self uri')
+          uris
+      )
+    | Error (_, msg) ->
+      if !verbose_ > 2 then
+        Printf.eprintf "[w%d] error when fetching %s:\n  %s\n%!" idx
+          (Uri.to_string uri) msg;
+      (* bad URL! *)
+      self.bad <- uri :: self.bad);
+    self.in_flight <- self.in_flight - 1;
+    check_if_done_ self
+
+  let worker (self : t) ~(idx : int) : unit =
     let client = Ezcurl_lwt.make () in
 
     let continue = ref true in
-    while !continue && not (Queue.is_empty self.tasks) do
-      if self.max >= 0 && self.n > self.max then
+    while !continue do
+      if self.max >= 0 && self.n + self.in_flight > self.max then (
+        F.Chan.close self.tasks;
         continue := false
-      else (
-        let uri = Queue.pop self.tasks in
-        if !verbose_ > 0 then Printf.eprintf "crawl %s\n%!" (Uri.to_string uri);
-
-        (* fetch URL (only 500kb) *)
-        self.n <- 1 + self.n;
-        let resp =
-          F.await_lwt
-          @@ Ezcurl_lwt.get ~client ~range:"0-500000" ~url:(Uri.to_string uri)
-               ()
-        in
-
-        match resp with
-        | Ok { Ezcurl_lwt.code; body; _ } ->
-          if bad_code code then (
-            if !verbose_ > 1 then
-              Printf.eprintf "bad code when fetching %s: %d\n%!"
-                (Uri.to_string uri) code;
-            self.bad <- uri :: self.bad (* bad URL! *)
-          ) else (
-            (* if !verbose_ then Printf.eprintf "body for %s:\n%s\n" (Uri.to_string uri) body; *)
-            let cur_host =
-              Uri.host_with_default ~default:self.default_host uri
-            in
-            let uris = find_urls body in
-            List.iter
-              (fun uri' ->
-                match Uri.host uri' with
-                | Some h when Str_set.mem h self.domains ->
-                  (* follow this link *)
-                  if !verbose_ > 1 then
-                    Printf.eprintf "follow link to %s\n%!" (Uri.to_string uri');
-                  push_task self uri'
-                | Some _ -> ()
-                | None ->
-                  (* relative URL, make it absolute *)
-                  let uri' = Uri.with_host uri' (Some cur_host) in
-                  let uri' = Uri.with_scheme uri' (Uri.scheme uri) in
-                  if !verbose_ > 1 then
-                    Printf.eprintf "follow link to %s\n%!" (Uri.to_string uri');
-                  push_task self uri')
-              uris
-          )
-        | Error (_, msg) ->
-          if !verbose_ > 2 then
-            Printf.eprintf "error when fetching %s:\n  %s\n%!"
-              (Uri.to_string uri) msg;
-          (* bad URL! *)
-          self.bad <- uri :: self.bad
+      ) else (
+        match F.Chan.receive_exn self.tasks with
+        | exception F.Chan.Closed -> continue := false
+        | uri -> process_task self ~idx ~client uri
       )
-    done
+    done;
+    if !verbose_ > 0 then Printf.eprintf "[w%d] exiting…\n%!" idx;
+    ()
 
   let run (self : t) : Uri.t list * int * int =
     Printf.printf "run %d jobs…\ndomain(s): [%s]\n%!" self.j
       (String.concat "," @@ Str_set.elements self.domains);
     let workers =
-      CCList.init self.j (fun _ ->
-          F.spawn ~name:"worker" @@ fun () -> worker self)
+      CCList.init self.j (fun idx ->
+          F.spawn ~name:(spf "worker%d" idx) (fun () ->
+              try worker ~idx self
+              with e ->
+                Printf.eprintf "[w%d]: uncaught exn %s\n%!" idx
+                  (Printexc.to_string e)))
     in
 
     (* wait for all workers to be done *)
-    List.iter F.await workers;
-    self.bad, self.n, Queue.length self.tasks
+    List.iteri
+      (fun idx w ->
+        if !verbose_ > 0 then Printf.eprintf "waiting for w%d…\n%!" idx;
+        F.await w)
+      workers;
+    self.bad, self.n, F.Chan.size self.tasks
 end
 
 let help_str =
@@ -146,7 +184,10 @@ let help_str =
 usage: argiope url [url*] [option*]
 |}
 
-let () =
+let main () : int =
+  let@ () = Trace_tef.with_setup () in
+  Sys.catch_break true;
+  let t0 = Unix.gettimeofday () in
   let domains = ref Str_set.empty in
   let start = ref [] in
   let j = ref 20 in
@@ -166,9 +207,10 @@ let () =
     |> Arg.align
   in
   Arg.parse opts (CCList.Ref.push start) help_str;
-  if !start = [] then
-    Arg.usage opts help_str
-  else (
+  if !start = [] then (
+    Arg.usage opts help_str;
+    1
+  ) else (
     let start = List.map Uri.of_string !start in
     let default_host =
       match Uri.host @@ List.hd start with
@@ -181,13 +223,21 @@ let () =
     in
     (* crawl *)
     let bad, num, remaining = F.main (fun () -> Run.run run_state) in
+    let elapsed_s = Unix.gettimeofday () -. t0 in
+
     if bad <> [] then (
-      Printf.printf "ERROR: crawled %d pages, %d dead links (%d remaining)\n"
-        num (List.length bad) remaining;
+      Printf.printf
+        "ERROR: crawled %d pages in %.4fs, %d dead links (%d remaining)\n" num
+        elapsed_s (List.length bad) remaining;
       List.iter
         (fun uri -> Printf.printf "  dead: %s\n" (Uri.to_string uri))
         bad;
-      exit 1
-    ) else
-      Printf.printf "OK: crawled %d pages (remaining %d)\n" num remaining
+      1
+    ) else (
+      Printf.printf "OK: crawled %d pages in %.4fs (remaining %d)\n" num
+        elapsed_s remaining;
+      0
+    )
   )
+
+let () = exit @@ main ()

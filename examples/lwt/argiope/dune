@@ -1,4 +1,5 @@
 
 (executable
   (name argiope)
-  (libraries containers uri lambdasoup lwt ezcurl-lwt fuseau fuseau-lwt))
+  (libraries containers uri lambdasoup trace.core trace-tef
+             lwt ezcurl-lwt fuseau fuseau-lwt))
