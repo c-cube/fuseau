@@ -1,6 +1,0 @@
-
-(library
-  (name fuseau)
-  (public_name fuseau)
-  (synopsis "IO and concurrency library on top of libuv")
-  (libraries atomic picos luv cstruct thread-local-storage))
