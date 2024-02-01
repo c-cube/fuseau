@@ -62,7 +62,17 @@ module Run = struct
 
   let find_urls (body : string) : Uri.t list =
     let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "argiope.find-urls" in
-    let body = Soup.parse body in
+    let body =
+      (* make sure to limit the size *)
+      let body =
+        if String.length body > 100_000 then
+          String.sub body 0 100_000
+        else
+          body
+      in
+      Soup.parse body
+    in
+
     let open Soup.Infix in
     let nodes = body $$ "a[href]" in
     Soup.fold
@@ -74,8 +84,8 @@ module Run = struct
       [] nodes
 
   let check_if_done_ self =
-    Printf.eprintf "CHECK: inflight=%d size=%d\n%!" self.in_flight
-      (F.Chan.size self.tasks);
+    (*Printf.eprintf "CHECK: inflight=%d size=%d\n%!" self.in_flight
+      (F.Chan.size self.tasks);*)
     if self.in_flight = 0 && F.Chan.is_empty self.tasks then
       F.Chan.close self.tasks
 
@@ -84,11 +94,11 @@ module Run = struct
     if !verbose_ > 0 then
       Printf.eprintf "[w%d] crawl %s\n%!" idx (Uri.to_string uri);
 
-    (* fetch URL (only 500kb) *)
+    (* fetch URL (only 100kb) *)
     self.n <- 1 + self.n;
     let resp =
       let fut =
-        Ezcurl_lwt.get ~client ~range:"0-500000" ~url:(Uri.to_string uri) ()
+        Ezcurl_lwt.get ~client ~range:"0-100000" ~url:(Uri.to_string uri) ()
       in
       let@ () = Fuseau.with_cancel_callback (fun _ -> Lwt.cancel fut) in
 
