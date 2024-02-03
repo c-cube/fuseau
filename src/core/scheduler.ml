@@ -40,9 +40,12 @@ let[@inline] check_active_ (self : t) =
   let (Any_fiber f) = self.root_fiber in
   if Fiber.is_done f then raise Inactive
 
+let[@inline] schedule_no_check_ (self : t) (task : task) : unit =
+  Queue.push task self.next_tick_tasks
+
 let[@inline] schedule_ (self : t) (task : task) : unit =
   check_active_ self;
-  Queue.push task self.next_tick_tasks
+  schedule_no_check_ self task
 
 let[@inline] schedule_micro_task_ (self : t) f : unit =
   check_active_ self;
@@ -165,7 +168,7 @@ let run_task (self : t) (task : task) : unit =
             let wakeup () =
               (* Trace.message "wakeup suspended fiber"; *)
               self.n_suspended <- self.n_suspended - 1;
-              schedule_ self (T_cont (Any_fiber fiber, k, ()));
+              schedule_no_check_ self (T_cont (Any_fiber fiber, k, ()));
               (* make sure we're not in the event loop, waiting for sth else *)
               Event_loop.interrupt_if_in_blocking_section self.ev_loop
             in

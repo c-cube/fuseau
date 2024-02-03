@@ -41,7 +41,7 @@ let main_loop_ (self : t) : unit =
          let async = Luv.Async.init ~loop:self.loop ignore |> Err.unwrap_luv in
          self.async <- Some async;
       *)
-      self.ev_loop#one_step ~block:true ();
+      Event_loop.one_step self.ev_loop ~block:true ();
 
       (* TODO:
          (* cleanup async *)
@@ -51,8 +51,11 @@ let main_loop_ (self : t) : unit =
       *)
       Trace.counter_int "fuseau.n-tasks" (Scheduler.n_queued_tasks self.sched)
     | false, true, false ->
-      Printf.eprintf
-        "bug: fuseau has pending fibers but no event in the event loop\n%!";
+      (* TODO: warn?
+         Printf.eprintf
+           "bug: fuseau has pending fibers but no event in the event loop\n%!";
+      *)
+      Event_loop.one_step self.ev_loop ~block:true ();
       continue := false
   done
 

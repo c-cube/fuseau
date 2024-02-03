@@ -16,6 +16,7 @@ module Run = struct
   type t = {
     domains: Str_set.t; (* domains to recursively crawl *)
     mutable in_flight: int;
+    pool: Moonpool.Runner.t;
     tasks: Uri.t F.Chan.t;
     default_host: string;
     max: int;
@@ -23,6 +24,7 @@ module Run = struct
     mutable bad: Uri.t list;
     mutable n: int; (* number of pages crawled *)
     j: int;
+    w: int;
   }
 
   let push_task (self : t) u : unit =
@@ -32,7 +34,7 @@ module Run = struct
       try F.Chan.send self.tasks u with F.Chan.Closed -> ()
     )
 
-  let make ~j ~domains ~default_host ~max start : t =
+  let make ~j ~w ~domains ~default_host ~max start : t =
     (* include the domains of [start] in [domains] *)
     let domains =
       List.fold_left
@@ -42,12 +44,21 @@ module Run = struct
           | Some h -> Str_set.add h set)
         domains start
     in
+    let j =
+      if j = 0 then
+        Moonpool.recommended_thread_count ()
+      else
+        j
+    in
+    let pool = Moonpool.Ws_pool.create ~num_threads:j () in
     let self =
       {
         domains;
         j;
+        w;
         max;
         in_flight = 0;
+        pool;
         tasks = F.Chan.create ~max_size:10_000 ();
         default_host;
         seen = Uri_tbl.create 256;
@@ -119,7 +130,12 @@ module Run = struct
       ) else (
         (* if !verbose_ then Printf.eprintf "body for %s:\n%s\n" (Uri.to_string uri) body; *)
         let cur_host = Uri.host_with_default ~default:self.default_host uri in
-        let uris = find_urls body in
+
+        (* compute URIs on the background pool *)
+        let uris =
+          Fuseau_moonpool.await_fut
+          @@ Moonpool.Fut.spawn ~on:self.pool (fun () -> find_urls body)
+        in
         List.iter
           (fun uri' ->
             match Uri.host uri' with
@@ -171,7 +187,7 @@ module Run = struct
     Printf.printf "run %d jobs…\ndomain(s): [%s]\n%!" self.j
       (String.concat "," @@ Str_set.elements self.domains);
     let workers =
-      CCList.init self.j (fun idx ->
+      CCList.init self.w (fun idx ->
           F.spawn ~name:(spf "worker%d" idx) (fun () ->
               try worker ~idx self
               with e ->
@@ -200,7 +216,8 @@ let main () : int =
   let t0 = Unix.gettimeofday () in
   let domains = ref Str_set.empty in
   let start = ref [] in
-  let j = ref 20 in
+  let j = ref 0 in
+  let w = ref 20 in
   let max_ = ref ~-1 in
   let opts =
     [
@@ -212,7 +229,8 @@ let main () : int =
         Arg.String (fun s -> domains := Str_set.add s !domains),
         " alias to --domainm" );
       "--max", Arg.Set_int max_, " max number of pages to explore";
-      "-j", Arg.Set_int j, " number of jobs (default 20)";
+      "-w", Arg.Set_int w, " number of workers (default 20)";
+      "-j", Arg.Set_int j, " number of background threads";
     ]
     |> Arg.align
   in
@@ -229,7 +247,7 @@ let main () : int =
       | exception _ -> failwith "need absolute URIs"
     in
     let run_state =
-      Run.make ~default_host ~j:!j ~domains:!domains ~max:!max_ start
+      Run.make ~default_host ~j:!j ~w:!w ~domains:!domains ~max:!max_ start
     in
     (* crawl *)
     let bad, num, remaining = F.main (fun () -> Run.run run_state) in

@@ -17,6 +17,7 @@ depends: [
   "thread-local-storage"
   "odoc" {with-doc}
 ]
+depopts: ["moonpool"]
 build: [
   ["dune" "subst"] {dev}
   [

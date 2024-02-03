@@ -29,6 +29,8 @@
   (trace-tef :with-test)
   (mdx :with-test)
   thread-local-storage)
+ (depopts
+   moonpool)
  (tags
   (await effects event-loop thread-local-storage)))
 
