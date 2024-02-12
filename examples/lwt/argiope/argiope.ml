@@ -71,8 +71,11 @@ module Run = struct
 
   let bad_code c = c >= 400
 
-  let find_urls (body : string) : Uri.t list =
-    let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "argiope.find-urls" in
+  let find_urls ~in_url (body : string) : Uri.t list =
+    let@ _sp =
+      Trace.with_span ~__FILE__ ~__LINE__ "argiope.find-urls" ~data:(fun () ->
+          [ "in_url", `String in_url; "size", `Int (String.length body) ])
+    in
     let body =
       (* make sure to limit the size *)
       let body =
@@ -116,7 +119,6 @@ module Run = struct
       F.await_lwt fut
     in
 
-    (* TODO: use moonpool to parse in the background *)
     (match resp with
     | Ok { Ezcurl_lwt.code; body; _ } ->
       if !verbose_ > 1 then
@@ -134,7 +136,8 @@ module Run = struct
         (* compute URIs on the background pool *)
         let uris =
           Fuseau_moonpool.await_fut
-          @@ Moonpool.Fut.spawn ~on:self.pool (fun () -> find_urls body)
+          @@ Moonpool.Fut.spawn ~on:self.pool (fun () ->
+                 find_urls ~in_url:(Uri.to_string uri) body)
         in
         List.iter
           (fun uri' ->
@@ -177,7 +180,11 @@ module Run = struct
       ) else (
         match F.Chan.receive_exn self.tasks with
         | exception F.Chan.Closed -> continue := false
-        | uri -> process_task self ~idx ~client uri
+        | uri ->
+          (try process_task self ~idx ~client uri
+           with e ->
+             Printf.eprintf "w[%d]: uncaught exn %s\n%!" idx
+               (Printexc.to_string e))
       )
     done;
     if !verbose_ > 0 then Printf.eprintf "[w%d] exiting…\n%!" idx;
@@ -201,6 +208,7 @@ module Run = struct
         if !verbose_ > 0 then Printf.eprintf "waiting for w%d…\n%!" idx;
         F.await w)
       workers;
+    Printf.eprintf "done waiting\n%!";
     self.bad, self.n, F.Chan.size self.tasks
 end
 
@@ -227,7 +235,7 @@ let main () : int =
         " include given domain" );
       ( "-d",
         Arg.String (fun s -> domains := Str_set.add s !domains),
-        " alias to --domainm" );
+        " alias to --domain" );
       "--max", Arg.Set_int max_, " max number of pages to explore";
       "-w", Arg.Set_int w, " number of workers (default 20)";
       "-j", Arg.Set_int j, " number of background threads";

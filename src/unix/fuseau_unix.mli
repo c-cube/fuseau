@@ -1,3 +1,6 @@
+module IO_unix = IO_unix
+module Net = Net
+
 class ev_loop : Event_loop.t
 (** A unix-based event loop *)
 

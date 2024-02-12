@@ -1,3 +1,6 @@
+module IO_unix = IO_unix
+module Net = Net
+
 type cancel_handle = Cancel_handle.t = { cancel: unit -> unit } [@@unboxed]
 
 type io_mode =
