@@ -5,10 +5,12 @@ type microtask = unit -> unit
 type task =
   | T_start : 'a Fiber.t * (unit -> 'a) -> task
   | T_cont : Fiber.any * ('a, unit) ED.continuation * 'a -> task
+  | T_run : (unit -> unit) -> task
 
 type t = {
   root_fiber: Fiber.any;  (** Fiber encompassing all other *)
   ev_loop: Event_loop.t;
+  t_id: int;  (** Thread on which the scheduler runs *)
   mutable cur_fiber: Fiber.any option;  (** Currently running fiber *)
   mutable cur_span: Trace.span;  (** Span for the current fiber, if any *)
   mutable n_suspended: int;  (** Number of suspended tasks. *)
@@ -74,6 +76,7 @@ let[@inline] ev_loop self = self.ev_loop
 let create ~ev_loop () : t =
   {
     ev_loop;
+    t_id = Thread.self () |> Thread.id;
     cur_fiber = None;
     cur_span = 0L;
     task_q = Queue.create ();
@@ -143,6 +146,9 @@ let spawn_from_anywhere ?name (self : t) f : _ Fiber.t =
   Lock.with_ self.outside_q (fun q -> Queue.push (T_start (fiber, f)) q);
   fiber
 
+let run_from_anywhere (self : t) f : unit =
+  Lock.with_ self.outside_q (fun q -> Queue.push (T_run f) q)
+
 (** call [f()] and resolve the fiber once [f()] is done *)
 let run_task_and_resolve_fiber (self : t) fiber f =
   try
@@ -165,12 +171,24 @@ let run_task (self : t) (task : task) : unit =
           (fun k ->
             trace_exit_fiber_ self;
             self.n_suspended <- 1 + self.n_suspended;
+
+            let wakeup_from_same_thread () =
+              self.n_suspended <- self.n_suspended - 1;
+              schedule_no_check_ self (T_cont (Any_fiber fiber, k, ()))
+              (* make sure we're not in the event loop, waiting for sth else *)
+            in
+
             let wakeup () =
               (* Trace.message "wakeup suspended fiber"; *)
-              self.n_suspended <- self.n_suspended - 1;
-              schedule_no_check_ self (T_cont (Any_fiber fiber, k, ()));
-              (* make sure we're not in the event loop, waiting for sth else *)
-              Event_loop.interrupt_if_in_blocking_section self.ev_loop
+              if Thread.id @@ Thread.self () = self.t_id then
+                wakeup_from_same_thread ()
+              else (
+                (* put in the thread-safe queue *)
+                run_from_anywhere self (fun () -> wakeup_from_same_thread ());
+                (* make sure that, if the scheduler thread is sleeping in the
+                   event loop, we wake it up *)
+                Event_loop.interrupt_if_in_blocking_section self.ev_loop
+              )
             in
             before_suspend ~wakeup)
       | Effects.Yield ->
@@ -201,6 +219,7 @@ let run_task (self : t) (task : task) : unit =
       self.cur_fiber <- Some any_fib;
       trace_enter_fiber_ self fiber;
       ED.continue k x)
+  | T_run f -> f ()
 
 let run_iteration (self : t) : unit =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau.scheduler.iteration" in

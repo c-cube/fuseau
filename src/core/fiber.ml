@@ -161,6 +161,14 @@ let create ?(name = "") () =
     fls = [||];
   }
 
+let[@inline] return x : _ t =
+  let id = Fiber_handle.fresh () in
+  { id; fls = [||]; name = ""; state = A.make (Done x) }
+
+let[@inline] fail ebt : _ t =
+  let id = Fiber_handle.fresh () in
+  { id; fls = [||]; name = ""; state = A.make (Fail ebt) }
+
 let resolve = resolve
 let cancel = fail_fiber
 let add_child = add_child

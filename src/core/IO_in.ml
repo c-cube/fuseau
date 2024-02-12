@@ -124,31 +124,3 @@ let input_all ?(buf = Bytes.create 128) (self : #t) : string =
     Bytes.unsafe_to_string !buf
   else
     Bytes.sub_string !buf 0 !i
-
-let of_unix_fd ?(close_noerr = false) ?(buf = Bytes.create _default_buf_size)
-    (fd : Unix.file_descr) : t =
-  let buf_len = ref 0 in
-  let buf_off = ref 0 in
-
-  let refill () =
-    buf_off := 0;
-    buf_len := IO_unix.read fd buf 0 (Bytes.length buf)
-  in
-
-  object
-    method input b i len : int =
-      if !buf_len = 0 then refill ();
-      let n = min len !buf_len in
-      if n > 0 then (
-        Bytes.blit buf !buf_off b i n;
-        buf_off := !buf_off + n;
-        buf_len := !buf_len - n
-      );
-      n
-
-    method close () =
-      if close_noerr then (
-        try Unix.close fd with _ -> ()
-      ) else
-        Unix.close fd
-  end

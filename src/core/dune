@@ -4,4 +4,4 @@
  (public_name fuseau)
  (synopsis "Fuseau: a cooperative concurrency library for OCaml 5")
  (private_modules common_ utils_ types)
- (libraries thread-local-storage trace.core unix mtime mtime.clock.os))
+ (libraries thread-local-storage trace.core mtime mtime.clock.os))

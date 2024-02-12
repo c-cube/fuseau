@@ -29,13 +29,8 @@ module Chan = Chan
 
 (** {2 IO} *)
 
-module IO_unix = IO_unix
 module IO_in = IO_in
 module IO_out = IO_out
-
-(** {2 Networking} *)
-
-module Net = Net
 
 (** {2 Sleep} *)
 

@@ -24,56 +24,6 @@ let dummy : t =
     method output _ _ _ = ()
   end
 
-let of_unix_fd ?(close_noerr = false) ?(buf = Bytes.create _default_buf_size) fd
-    : t =
-  let buf_off = ref 0 in
-
-  let[@inline] is_full () = !buf_off = Bytes.length buf in
-
-  let flush () =
-    if !buf_off > 0 then (
-      IO_unix.write fd buf 0 !buf_off;
-      buf_off := 0
-    )
-  in
-
-  object
-    method output_char c =
-      if is_full () then flush ();
-      Bytes.set buf !buf_off c;
-      incr buf_off
-
-    method output bs i len : unit =
-      let i = ref i in
-      let len = ref len in
-
-      while !len > 0 do
-        (* make space *)
-        if is_full () then flush ();
-
-        let n = min !len (Bytes.length buf - !buf_off) in
-        Bytes.blit bs !i buf !buf_off n;
-        buf_off := !buf_off + n;
-        i := !i + n;
-        len := !len - n
-      done;
-      (* if full, write eagerly *)
-      if is_full () then flush ()
-
-    method close () =
-      if close_noerr then (
-        try
-          flush ();
-          Unix.close fd
-        with _ -> ()
-      ) else (
-        flush ();
-        Unix.close fd
-      )
-
-    method flush = flush
-  end
-
 let of_buffer (buf : Buffer.t) : t =
   object
     method close () = ()

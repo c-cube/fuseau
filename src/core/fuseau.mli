@@ -109,6 +109,8 @@ module Fiber : sig
         on_cancel: cancel_callback list;
       }
 
+  val return : 'a -> 'a t
+  val fail : Exn_bt.t -> _ t
   val peek : 'a t -> 'a state
   val is_cancelled : _ t -> bool
   val is_done : _ t -> bool
@@ -249,15 +251,6 @@ module Cancel_handle = Cancel_handle
 
 (** {2 IO} *)
 
-(** Low level Unix IOs *)
-module IO_unix : sig
-  type file_descr = Unix.file_descr
-
-  val read : file_descr -> bytes -> int -> int -> int
-  val write_once : file_descr -> bytes -> int -> int -> int
-  val write : file_descr -> bytes -> int -> int -> unit
-end
-
 (** Input stream. *)
 module IO_in : sig
   (** An input stream, i.e an incoming stream of bytes.
@@ -279,10 +272,6 @@ module IO_in : sig
 
   val empty : t
   (** Empty input, contains 0 bytes. *)
-
-  val of_unix_fd : ?close_noerr:bool -> ?buf:bytes -> Unix.file_descr -> t
-  (** Create an in stream from a raw Unix file descriptor. The file descriptor
-      must be opened for reading. *)
 
   val of_string : ?off:int -> ?len:int -> string -> t
   (** An input channel reading from the string.
@@ -358,9 +347,6 @@ module IO_out : sig
   val dummy : t
   (** Dummy output, drops everything written to it. *)
 
-  val of_unix_fd : ?close_noerr:bool -> ?buf:bytes -> Unix.file_descr -> t
-  (** Output stream writing into the given Unix file descriptor. *)
-
   val of_buffer : Buffer.t -> t
   (** [of_buffer buf] is an output channel that writes directly into [buf].
     [flush] and [close] have no effect. *)
@@ -394,49 +380,6 @@ module IO_out : sig
   val tee : t list -> t
   (** [tee ocs] is an output that accepts bytes and writes them to every output
     in [ocs]. When closed, it closes all elements of [oc]. *)
-end
-
-(** {2 Networking} *)
-
-(** Networking *)
-module Net : sig
-  module Inet_addr : sig
-    type t = Unix.inet_addr
-
-    val loopback : t
-    val any : t
-    val show : t -> string
-    val of_string : string -> t option
-
-    val of_string_exn : string -> t
-    (** @raise Invalid_argument *)
-  end
-
-  (** Socket addresses *)
-  module Sockaddr : sig
-    type t = Unix.sockaddr
-
-    val show : t -> string
-    val unix : string -> t
-    val inet : Inet_addr.t -> int -> t
-    val inet_parse : string -> int -> t option
-    val inet_parse_exn : string -> int -> t
-    val inet_local : int -> t
-    val inet_any : int -> t
-  end
-
-  module TCP_server : sig
-    type t
-
-    val stop : t -> unit
-    val join : t -> unit
-
-    val with_serve :
-      Sockaddr.t ->
-      (Sockaddr.t -> IO_in.t -> IO_out.t -> unit) ->
-      (t -> 'a) ->
-      'a
-  end
 end
 
 (** {2 Sleep} *)
