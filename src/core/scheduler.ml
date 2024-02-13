@@ -210,11 +210,11 @@ let run_task (self : t) (task : task) : unit =
     )
   | T_cont ((Any_fiber fiber as any_fib), k, x) ->
     (match Fiber.peek fiber with
-    | Fail ebt ->
+    | Some (Error ebt) ->
       (* cleanup *)
       Exn_bt.discontinue k ebt
-    | Done _ -> assert false
-    | Wait _ ->
+    | Some _ -> assert false
+    | None ->
       (* continue running the fiber *)
       self.cur_fiber <- Some any_fib;
       trace_enter_fiber_ self fiber;

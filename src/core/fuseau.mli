@@ -100,18 +100,9 @@ module Fiber : sig
 
   type cancel_callback = Exn_bt.t -> unit
 
-  type 'a state = private
-    | Done of 'a
-    | Fail of Exn_bt.t
-    | Wait of {
-        waiters: 'a callback list;
-        children: any Fiber_handle.Map.t;
-        on_cancel: cancel_callback list;
-      }
-
   val return : 'a -> 'a t
   val fail : Exn_bt.t -> _ t
-  val peek : 'a t -> 'a state
+  val peek : 'a t -> 'a Exn_bt.result option
   val is_cancelled : _ t -> bool
   val is_done : _ t -> bool
 

@@ -68,6 +68,6 @@ let main ~loop:ev_loop (main : unit -> 'a) : 'a =
   in
 
   match Fiber.peek fiber with
-  | Wait _ -> assert false (* should not have stopped *)
-  | Done x -> x
-  | Fail ebt -> Exn_bt.raise ebt
+  | None -> assert false (* should not have stopped *)
+  | Some (Ok x) -> x
+  | Some (Error ebt) -> Exn_bt.raise ebt

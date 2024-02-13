@@ -2,9 +2,9 @@ open Common_
 open Types
 
 type 'a state = 'a fiber_status =
-  | Done of 'a
-  | Fail of Exn_bt.t
+  | Done of 'a Exn_bt.result
   | Wait of {
+      already_done: 'a Exn_bt.result option;
       waiters: 'a fiber_callback list;
       children: any_fiber FM.t;  (** Set of children *)
       on_cancel: cancel_callback list;
@@ -15,16 +15,19 @@ type 'a callback = 'a Types.fiber_callback
 type cancel_callback = Exn_bt.t -> unit
 type any = Types.any_fiber = Any_fiber : _ t -> any [@@unboxed]
 
-let[@inline] peek self = A.get self.state
+let[@inline] peek self =
+  match A.get self.state with
+  | Done x -> Some x
+  | Wait _ -> None
 
 let[@inline] is_done self =
   match A.get self.state with
-  | Done _ | Fail _ -> true
+  | Done _ -> true
   | _ -> false
 
 let[@inline] is_cancelled self =
   match A.get self.state with
-  | Fail _ -> true
+  | Done (Error _) -> true
   | _ -> false
 
 (** Register [f] to be called when the fiber ends.
@@ -34,50 +37,76 @@ let on_res (self : _ t) f =
   while
     match A.get self.state with
     | Done x ->
-      f (Ok x);
+      f x;
       false
-    | Fail ebt ->
-      f (Error ebt);
-      false
-    | Wait { waiters = l; children; on_cancel } as old ->
+    | Wait ({ waiters = l; _ } as wait) as old ->
       not
-        (A.compare_and_set self.state old
-           (Wait { waiters = f :: l; children; on_cancel }))
+        (A.compare_and_set self.state old (Wait { wait with waiters = f :: l }))
   do
     ()
   done
 
-(** Call waiters with [res] once all [children] are done *)
-let call_waiters_once_children_are_done ~children ~waiters
-    (res : 'a Exn_bt.result) : unit =
-  let[@inline] call_waiters () =
-    List.iter (fun (w : 'a fiber_callback) -> w res) waiters
-  in
+let fail_waiting_fiber (self : _ t) (ebt : Exn_bt.t) =
+  while
+    match A.get self.state with
+    | Wait ({ already_done = Some (Ok _); _ } as wait) as old_st ->
+      (* turn an about-to-succeed fiber to an about-to-fail one *)
+      let new_st = Wait { wait with already_done = Some (Error ebt) } in
+      not (A.compare_and_set self.state old_st new_st)
+    | _ -> false
+  do
+    ()
+  done
 
+let resolve_to_final_state_and_call_waiters (self : _ t) : unit =
+  (* get the final result *)
+  match A.get self.state with
+  | Wait { already_done = Some (Ok _ as res); waiters; _ } ->
+    A.set self.state (Done res);
+    List.iter (fun (w : 'a fiber_callback) -> w res) waiters
+  | Wait { already_done = Some (Error ebt as res); waiters; on_cancel; _ } ->
+    A.set self.state (Done res);
+    (* also call cancel CBs *)
+    List.iter (fun f -> f ebt) on_cancel;
+    List.iter (fun (w : 'a fiber_callback) -> w res) waiters
+  | Done _ | Wait { already_done = None; _ } -> assert false
+
+(** Call waiters with [res] once all [children] are done *)
+let call_waiters_and_set_res_once_children_are_done ~children (self : _ t) :
+    unit =
   let n_children = FM.cardinal children in
   if n_children > 0 then (
     (* wait for all children to be done *)
     let n_waiting = A.make (FM.cardinal children) in
-    let on_child_finish (_ : _ result) =
-      (* if we're the last to finish, wakeup the parent call *)
-      if A.fetch_and_add n_waiting (-1) = 1 then call_waiters ()
+
+    let on_child_finish (res : _ result) =
+      (match res with
+      | Error ebt -> fail_waiting_fiber self ebt
+      | Ok _ -> ());
+
+      (* if we're the last to finish, resolve the fiber *)
+      if A.fetch_and_add n_waiting (-1) = 1 then
+        resolve_to_final_state_and_call_waiters self
     in
+
     FM.iter (fun _ (Any_fiber f) -> on_res f on_child_finish) children
   ) else
-    call_waiters ()
+    (* no children, can resolve immediately *)
+    resolve_to_final_state_and_call_waiters self
 
 (** Successfully resolve the fiber *)
 let resolve (self : 'a t) (r : 'a) : unit =
-  let new_st = Done r in
   while
     match A.get self.state with
-    | Wait { waiters; children; on_cancel = _ } as old ->
+    | Wait ({ children; already_done = None; _ } as wait) as old ->
+      (* switch to [already_done=Some r] *)
+      let new_st = Wait { wait with already_done = Some (Ok r) } in
       if A.compare_and_set self.state old new_st then (
-        call_waiters_once_children_are_done ~children ~waiters (Ok r);
+        call_waiters_and_set_res_once_children_are_done ~children self;
         false
       ) else
         true
-    | Done _ | Fail _ -> false
+    | Wait { already_done = Some _; _ } | Done _ -> false
   do
     ()
   done
@@ -85,19 +114,21 @@ let resolve (self : 'a t) (r : 'a) : unit =
 let rec fail_fiber : type a. a t -> Exn_bt.t -> unit =
  fun self ebt ->
   (* Trace.messagef (fun k -> k "fail fiber[%d]" (self.id :> int)); *)
-  let new_st = Fail ebt in
   while
     match A.get self.state with
-    | Wait { waiters; children; on_cancel } as old ->
+    | Wait ({ children; already_done = None; on_cancel; _ } as wait) as old ->
+      let new_st =
+        Wait { wait with already_done = Some (Error ebt); on_cancel = [] }
+      in
       if A.compare_and_set self.state old new_st then (
         (* here, unlike in {!resolve_fiber}, we immediately cancel children *)
         cancel_children ~children ebt;
         List.iter (fun cb -> cb ebt) on_cancel;
-        call_waiters_once_children_are_done ~waiters ~children (Error ebt);
+        call_waiters_and_set_res_once_children_are_done ~children self;
         false
       ) else
         true
-    | Done _ | Fail _ -> false
+    | Wait { already_done = Some _; _ } | Done _ -> false
   do
     ()
   done
@@ -109,10 +140,8 @@ and cancel_children ebt ~children : unit =
 let remove_child (self : _ t) (child : _ t) =
   while
     match A.get self.state with
-    | Wait { children; waiters; on_cancel } as old ->
-      let new_st =
-        Wait { children = FM.remove child.id children; waiters; on_cancel }
-      in
+    | Wait ({ children; _ } as wait) as old ->
+      let new_st = Wait { wait with children = FM.remove child.id children } in
       not (A.compare_and_set self.state old new_st)
     | _ -> false
   do
@@ -124,14 +153,9 @@ let remove_child (self : _ t) (child : _ t) =
 let add_child ~protected (self : _ fiber) (child : _ fiber) =
   while
     match A.get self.state with
-    | Wait { children; waiters; on_cancel } as old ->
+    | Wait ({ children; already_done = None; _ } as wait) as old ->
       let new_st =
-        Wait
-          {
-            children = FM.add child.id (Any_fiber child) children;
-            waiters;
-            on_cancel;
-          }
+        Wait { wait with children = FM.add child.id (Any_fiber child) children }
       in
 
       if A.compare_and_set self.state old new_st then (
@@ -155,7 +179,15 @@ exception Cancelled of Exn_bt.t
 let create ?(name = "") () =
   let id = Fiber_handle.fresh () in
   {
-    state = A.make @@ Wait { waiters = []; children = FM.empty; on_cancel = [] };
+    state =
+      A.make
+      @@ Wait
+           {
+             waiters = [];
+             already_done = None;
+             children = FM.empty;
+             on_cancel = [];
+           };
     id;
     name;
     fls = [||];
@@ -163,11 +195,11 @@ let create ?(name = "") () =
 
 let[@inline] return x : _ t =
   let id = Fiber_handle.fresh () in
-  { id; fls = [||]; name = ""; state = A.make (Done x) }
+  { id; fls = [||]; name = ""; state = A.make (Done (Ok x)) }
 
 let[@inline] fail ebt : _ t =
   let id = Fiber_handle.fresh () in
-  { id; fls = [||]; name = ""; state = A.make (Fail ebt) }
+  { id; fls = [||]; name = ""; state = A.make (Done (Error ebt)) }
 
 let resolve = resolve
 let cancel = fail_fiber
@@ -184,14 +216,14 @@ let get_current : (unit -> any option) ref = ref (fun () -> None)
 let add_cancel_cb_ (self : _ t) cb =
   while
     match A.get self.state with
-    | Wait { waiters; children; on_cancel } as old ->
+    | Wait ({ on_cancel; _ } as wait) as old ->
       not
         (A.compare_and_set self.state old
-           (Wait { waiters; children; on_cancel = cb :: on_cancel }))
-    | Fail ebt ->
+           (Wait { wait with on_cancel = cb :: on_cancel }))
+    | Done (Error ebt) ->
       cb ebt;
       false
-    | Done _ -> false
+    | Done (Ok _) -> false
   do
     ()
   done
@@ -200,12 +232,10 @@ let remove_top_cancel_cb_ (self : _ t) =
   while
     match A.get self.state with
     | Wait { on_cancel = []; _ } -> assert false
-    | Wait { waiters; children; on_cancel = _ :: tl } as old ->
-      not
-        (A.compare_and_set self.state old
-           (Wait { waiters; children; on_cancel = tl }))
-    | Fail _ebt -> false
-    | Done _ -> false
+    | Wait ({ on_cancel = _ :: tl; _ } as wait) as old ->
+      not (A.compare_and_set self.state old (Wait { wait with on_cancel = tl }))
+    | Done (Error _ebt) -> false
+    | Done (Ok _) -> false
   do
     ()
   done
@@ -219,16 +249,16 @@ let with_cancel_callback cb (k : unit -> 'a) : 'a =
 
 let[@inline] get_exn_ self =
   match A.get self.state with
-  | Done x -> x
-  | Fail ebt -> Exn_bt.raise ebt
+  | Done (Ok x) -> x
+  | Done (Error ebt) -> Exn_bt.raise ebt
   | Wait _ ->
     Trace.message "fiber.getexn";
     assert false
 
 let await self =
-  match peek self with
-  | Done x -> x
-  | Fail ebt -> Exn_bt.raise ebt
+  match A.get self.state with
+  | Done (Ok x) -> x
+  | Done (Error ebt) -> Exn_bt.raise ebt
   | Wait _ ->
     (* polling point *)
     (match !get_current () with
@@ -237,7 +267,7 @@ let await self =
       failwith "`await` must be called from inside a fiber"
     | Some (Any_fiber f) ->
       (match A.get f.state with
-      | Fail ebt -> Exn_bt.raise ebt
+      | Done (Error ebt) -> Exn_bt.raise ebt
       | _ -> ()));
 
     (* wait for resolution *)
@@ -245,16 +275,15 @@ let await self =
     get_exn_ self
 
 let try_await self =
-  match peek self with
-  | Done x -> Ok x
-  | Fail ebt -> Error ebt
+  match A.get self.state with
+  | Done res -> res
   | Wait _ ->
     (* polling point *)
     (match !get_current () with
     | None -> failwith "`await` must be called from inside a fiber"
     | Some (Any_fiber f) ->
       (match A.get f.state with
-      | Fail ebt -> Exn_bt.raise ebt
+      | Done (Error ebt) -> Exn_bt.raise ebt
       | _ -> ()));
 
     (* wait for resolution *)
@@ -263,8 +292,7 @@ let try_await self =
          { before_suspend = (fun ~wakeup -> on_res self (fun _ -> wakeup ())) };
 
     (match A.get self.state with
-    | Done x -> Ok x
-    | Fail ebt -> Error ebt
+    | Done res -> res
     | Wait _ -> assert false)
 
 let yield () =
@@ -273,7 +301,7 @@ let yield () =
   | None -> failwith "yield` must be called from inside a fiber"
   | Some (Any_fiber f) ->
     (match A.get f.state with
-    | Fail ebt -> Exn_bt.raise ebt
+    | Done (Error ebt) -> Exn_bt.raise ebt
     | Done _ -> assert false (* computation is still running *)
     | Wait _ -> ()));
 

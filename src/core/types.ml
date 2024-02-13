@@ -30,9 +30,13 @@ type 'a fiber = {
 }
 
 and 'a fiber_status =
-  | Done of 'a
-  | Fail of Exn_bt.t
+  | Done of 'a Exn_bt.result
   | Wait of {
+      already_done: 'a Exn_bt.result option;
+          (** If [Some _], the main computation has ended but we're
+          waiting for children to terminate. This means we can't
+          start new children. We can still change our mind and turn
+          [Some (Ok _)] into [Some (Error ebt)] if a child fails. *)
       waiters: 'a fiber_callback list;
           (** Callbacks waiting for the fiber to be done *)
       children: any_fiber FM.t;  (** Set of children *)
