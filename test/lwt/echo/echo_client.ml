@@ -33,8 +33,8 @@ let main ~port ~n ~n_conn () : unit =
           F.IO_out.output_string oc "hello";
           F.IO_out.flush oc;
 
-          (* read back something *)
-          let _n = F.IO_in.really_input ic buf in
+          (* read back what we wrote *)
+          F.IO_in.really_input ic buf 0 (String.length "hello");
           Trace.exit_manual_span _sp;
           F.yield ()
         done;
