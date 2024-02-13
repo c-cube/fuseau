@@ -18,7 +18,7 @@ let main ~port () : unit =
   Printf.printf "listening on port %d\n%!" port;
 
   let handle_client client_addr ic oc =
-    let _sp =
+    let _client_sp =
       Trace.enter_manual_toplevel_span ~__FILE__ ~__LINE__ "handle.client"
         ~data:(fun () -> [ "addr", `String (str_of_sockaddr client_addr) ])
     in
@@ -27,7 +27,8 @@ let main ~port () : unit =
     let continue = ref true in
     while !continue do
       let _sp =
-        Trace.enter_manual_sub_span ~parent:_sp ~__FILE__ ~__LINE__ "read.loop"
+        Trace.enter_manual_sub_span ~parent:_client_sp ~__FILE__ ~__LINE__
+          "read.loop"
       in
       Trace.message "read";
       let n = F.IO_in.input ic buf 0 (Bytes.length buf) in
@@ -41,7 +42,7 @@ let main ~port () : unit =
       );
       Trace.exit_manual_span _sp
     done;
-    Trace.exit_manual_span _sp
+    Trace.exit_manual_span _client_sp
   in
 
   (* TODO: catch errors?
