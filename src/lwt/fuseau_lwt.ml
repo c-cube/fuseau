@@ -179,6 +179,7 @@ module IO_lwt = struct
                      wakeup ();
                      Lwt_engine.stop_event _ev ));
         read fd buf i len
+      | exception Unix.Unix_error (Unix.ECONNRESET, _, _) -> 0
       | n -> n
     )
 
@@ -294,4 +295,63 @@ module IO_in_lwt = struct
         ) else
           Unix.close fd
     end
+end
+
+module Net = struct
+  module TCP_server = struct
+    type t = Lwt_io.server
+
+    let establish ?backlog ?no_close addr handler : t =
+      let server =
+        Lwt_io.establish_server_with_client_socket ?backlog ?no_close addr
+          (fun client_addr client_sock ->
+            let ic =
+              IO_in_lwt.of_unix_fd @@ Lwt_unix.unix_file_descr client_sock
+            in
+            let oc =
+              IO_out_lwt.of_unix_fd @@ Lwt_unix.unix_file_descr client_sock
+            in
+
+            spawn_as_lwt ~name:"tcp.server.handler" (fun () ->
+                handler client_addr ic oc))
+      in
+      await_lwt server
+
+    let shutdown self = await_lwt @@ Lwt_io.shutdown_server self
+  end
+
+  module TCP_client = struct
+    let with_connect addr (f : IO_in.t -> IO_out.t -> 'a) : 'a =
+      let sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+      Unix.set_nonblock sock;
+      Unix.setsockopt sock Unix.TCP_NODELAY true;
+
+      (* connect asynchronously *)
+      while
+        try
+          Unix.connect sock addr;
+          false
+        with
+        | Unix.Unix_error
+            ((Unix.EWOULDBLOCK | Unix.EINPROGRESS | Unix.EAGAIN), _, _)
+        ->
+          Fuseau.Private_.suspend ~before_suspend:(fun ~wakeup ->
+              Perform_action_in_lwt.schedule
+              @@ Action.Wait_writable
+                   ( sock,
+                     fun ev ->
+                       wakeup ();
+                       Lwt_engine.stop_event ev ));
+          true
+      do
+        ()
+      done;
+
+      let ic = IO_in_lwt.of_unix_fd sock in
+      let oc = IO_out_lwt.of_unix_fd sock in
+
+      let finally () = try Unix.close sock with _ -> () in
+      let@ () = Fun.protect ~finally in
+      f ic oc
+  end
 end
