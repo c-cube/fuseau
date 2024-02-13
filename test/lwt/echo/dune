@@ -1,0 +1,4 @@
+
+(executables
+  (names echo_server echo_client)
+  (libraries fuseau fuseau-lwt trace trace-tef))
