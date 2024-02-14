@@ -16,6 +16,4 @@ let main () =
   Array.iter Fuseau.await comps;
   print_endline "done"
 
-let () =
-  let loop = new Fuseau_unix.ev_loop in
-  Fuseau.main ~loop main
+let () = Fuseau_unix.main main

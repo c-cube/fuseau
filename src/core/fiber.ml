@@ -306,3 +306,8 @@ let yield () =
     | Wait _ -> ()));
 
   Effect.perform Effects.Yield
+
+module Private_ = struct
+  let create = create
+  let cancel = cancel
+end

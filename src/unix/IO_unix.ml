@@ -1,5 +1,3 @@
-open Utils_
-
 open struct
   let _default_buf_size = 16 * 1024
 end
@@ -12,8 +10,7 @@ let rec read fd buf i len : int =
   else (
     match Unix.read fd buf i len with
     | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) ->
-      let sched = Fuseau.get_scheduler () in
-      let loop = Fuseau.Scheduler.ev_loop sched in
+      let loop = U_loop.cur () in
       (* wait for FD to be ready *)
       Fuseau.Private_.suspend ~before_suspend:(fun ~wakeup ->
           ignore
@@ -31,10 +28,9 @@ let rec write_once fd buf i len : int =
   else (
     match Unix.write fd buf i len with
     | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) ->
-      let sched = get_sched "write_once" () in
-      let loop = Scheduler.ev_loop sched in
+      let loop = U_loop.cur () in
       (* wait for FD to be ready *)
-      Fiber.suspend ~before_suspend:(fun ~wakeup ->
+      Fuseau.Private_.suspend ~before_suspend:(fun ~wakeup ->
           ignore
             (loop#on_writable fd (fun ev ->
                  wakeup ();
@@ -53,8 +49,8 @@ let write fd buf i len : unit =
     len := !len - n
   done
 
-module IO_out = struct
-  include IO_out
+module Out = struct
+  include Iostream.Out
 
   let of_unix_fd ?(close_noerr = false) ?(buf = Bytes.create _default_buf_size)
       fd : t =
@@ -64,7 +60,7 @@ module IO_out = struct
 
     let flush () =
       if !buf_off > 0 then (
-        IO_unix.write fd buf 0 !buf_off;
+        write fd buf 0 !buf_off;
         buf_off := 0
       )
     in
@@ -107,8 +103,8 @@ module IO_out = struct
     end
 end
 
-module IO_in = struct
-  include IO_in
+module In = struct
+  include Iostream.In
 
   let of_unix_fd ?(close_noerr = false) ?(buf = Bytes.create _default_buf_size)
       (fd : Unix.file_descr) : t =
@@ -117,7 +113,7 @@ module IO_in = struct
 
     let refill () =
       buf_off := 0;
-      buf_len := IO_unix.read fd buf 0 (Bytes.length buf)
+      buf_len := read fd buf 0 (Bytes.length buf)
     in
 
     object

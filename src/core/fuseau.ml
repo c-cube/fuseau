@@ -29,8 +29,7 @@ module Chan = Chan
 
 (** {2 IO} *)
 
-module IO_in = IO_in
-module IO_out = IO_out
+module Iostream = Iostream
 
 (** {2 Sleep} *)
 
@@ -55,5 +54,7 @@ let sleep_s = Sleep.sleep_s
 let get_scheduler = Utils_.get_sched "get_scheduler"
 
 module Private_ = struct
+  module TLS = Common_.TLS
+
   let suspend = Fiber.suspend
 end

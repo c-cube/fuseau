@@ -17,6 +17,7 @@ val spawn_as_lwt :
 val spawn_as_lwt_from_anywhere :
   ?name:string -> Scheduler.t -> (unit -> 'a) -> 'a Lwt.t
 
+(** IO through Lwt's engine *)
 module IO_lwt : sig
   type file_descr = Unix.file_descr
 
@@ -25,16 +26,18 @@ module IO_lwt : sig
   val write : file_descr -> bytes -> int -> int -> unit
 end
 
-module IO_in_lwt : sig
-  include module type of IO_in
+module Iostream : sig
+  module In : sig
+    include module type of Iostream.In
 
-  val of_unix_fd : ?close_noerr:bool -> ?buf:bytes -> Unix.file_descr -> t
-end
+    val of_unix_fd : ?close_noerr:bool -> ?buf:bytes -> Unix.file_descr -> t
+  end
 
-module IO_out_lwt : sig
-  include module type of IO_out
+  module Out : sig
+    include module type of Iostream.Out
 
-  val of_unix_fd : ?close_noerr:bool -> ?buf:bytes -> Unix.file_descr -> t
+    val of_unix_fd : ?close_noerr:bool -> ?buf:bytes -> Unix.file_descr -> t
+  end
 end
 
 module Net : sig
@@ -45,14 +48,15 @@ module Net : sig
       ?backlog:int ->
       ?no_close:bool ->
       Unix.sockaddr ->
-      (Unix.sockaddr -> IO_in_lwt.t -> IO_out_lwt.t -> unit) ->
+      (Unix.sockaddr -> Iostream.In.t -> Iostream.Out.t -> unit) ->
       t
 
     val shutdown : t -> unit
   end
 
   module TCP_client : sig
-    val with_connect : Unix.sockaddr -> (IO_in.t -> IO_out.t -> 'a) -> 'a
+    val with_connect :
+      Unix.sockaddr -> (Iostream.In.t -> Iostream.Out.t -> 'a) -> 'a
   end
 end
 
