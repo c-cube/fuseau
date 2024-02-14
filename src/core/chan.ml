@@ -33,6 +33,12 @@ let close self : unit =
   Queue.iter (fun f -> f ()) self.receivers;
   ()
 
+let wakeup_receivers self =
+  while not (Queue.is_empty self.receivers) do
+    let r = Queue.pop self.receivers in
+    r ()
+  done
+
 let send self x : unit =
   let continue = ref true in
   while !continue do
@@ -43,12 +49,7 @@ let send self x : unit =
     else (
       continue := false;
       Queue.push x self.q;
-
-      (* wakeup receivers if needed *)
-      while not (Queue.is_empty self.receivers) do
-        let r = Queue.pop self.receivers in
-        r ()
-      done
+      wakeup_receivers self
     )
   done
 
@@ -58,6 +59,7 @@ let try_send self x : bool =
     false
   else (
     Queue.push x self.q;
+    wakeup_receivers self;
     true
   )
 
@@ -67,15 +69,16 @@ let on_send_ready self cb =
   else
     cb ()
 
+let wakeup_senders self =
+  while not (Queue.is_empty self.senders) do
+    let w = Queue.pop self.senders in
+    w ()
+  done
+
 let rec receive_exn (self : 'a t) : 'a =
   match Queue.pop self.q with
   | x ->
-    (* wakeup a writer if needed *)
-    while not (Queue.is_empty self.senders) do
-      let w = Queue.pop self.senders in
-      w ()
-    done;
-
+    wakeup_senders self;
     x
   | exception Queue.Empty ->
     if self.closed then raise Closed;
@@ -84,10 +87,14 @@ let rec receive_exn (self : 'a t) : 'a =
     receive_exn self
 
 let try_receive (self : 'a t) : 'a option =
-  if Queue.is_empty self.q then
+  if Queue.is_empty self.q then (
+    if self.closed then raise Closed;
     None
-  else
-    Some (Queue.pop self.q)
+  ) else (
+    let x = Queue.pop self.q in
+    wakeup_senders self;
+    Some x
+  )
 
 let on_receive_ready (self : _ t) cb : unit =
   if Queue.is_empty self.q then
