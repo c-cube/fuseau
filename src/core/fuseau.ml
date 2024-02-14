@@ -4,6 +4,12 @@ module Fiber = Fiber
 module Fiber_handle = Fiber_handle
 module Main = Main
 module FLS = FLS
+module Event = Event
+
+type 'ret branch = 'ret Event.branch =
+  | When : 'a Event.t * ('a -> 'ret) -> 'ret branch
+
+let select = Event.select
 
 (** {2 IO event loop} *)
 
@@ -51,6 +57,8 @@ let spawn_as_child_of = Scheduler.spawn_as_child_of
 let schedule_micro_task = Scheduler.schedule_micro_task
 let main = Main.main
 let sleep_s = Sleep.sleep_s
+let ev_timeout = Sleep.ev_deadline
+let ev_deadline = Sleep.ev_deadline
 let get_scheduler = Utils_.get_sched "get_scheduler"
 
 module Private_ = struct

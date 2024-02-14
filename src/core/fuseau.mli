@@ -20,6 +20,34 @@ module Fiber_handle : sig
   module Map : Map.S with type key = t
 end
 
+(** Atomic events.
+
+    An atomic event is something that can occur, or not
+    occur, without in-between. *)
+module Event : sig
+  type 'a t = {
+    poll: unit -> 'a Exn_bt.result option;
+    wait: (unit -> unit) -> Cancel_handle.t;
+  }
+  (** An event yielding ['a] *)
+
+  (** Used for [select] *)
+  type 'ret branch = When : 'a t * ('a -> 'ret) -> 'ret branch
+
+  val select : 'ret branch list -> 'ret
+  (** Select between multiple events. The first one to
+      be ready wins, and the corresponding function is called.
+
+      If no event is ready, the fiber suspends, and the [wait]
+      function of each event is used to wake it up again. *)
+end
+
+type 'ret branch = 'ret Event.branch =
+  | When : 'a Event.t * ('a -> 'ret) -> 'ret branch
+
+val select : 'ret branch list -> 'ret
+(** See {!Event.select}. *)
+
 (** {2 Synchronization} *)
 
 (** Basic channels *)
@@ -53,13 +81,21 @@ module Chan : sig
   (** [send c x] sends [x] over the channel [c].
       This might suspend the current fiber if the channel is full.
       @raise Closed if [c] is closed. *)
+
+  val ev_send : 'a t -> 'a -> unit Event.t
+  (** [ev_send c x] is an event that sends [x] into [c]
+      when there is room for it *)
+
+  val ev_receive : 'a t -> 'a Event.t
+  (** [ev_receive c] is an event that resolves by receiving
+      a value [x] from [c] when [c] is non empty *)
 end
 
 (** {2 Utils} *)
 
 (** Exception with backtrace *)
 module Exn_bt : sig
-  type t = {
+  type t = Exn_bt.t = {
     exn: exn;
     bt: Printexc.raw_backtrace;
   }
@@ -404,6 +440,14 @@ val cancel_after_s : float -> unit
 (** Cancel the current fiber after [delay] seconds, unless
     the fiber terminates first. The cancellation will use
     the {!Timeout} exception. *)
+
+val ev_timeout : float -> 'a Event.t
+(** [ev_timeout duration] is an event that resolves after
+    [duration] seconds with a [Error Timeout] error *)
+
+val ev_deadline : float -> 'a Event.t
+(** [ev_deadline time] is an event that resolves at monotonic
+    time [t] with a [Error Timeout] error *)
 
 val with_cancel_callback : (Exn_bt.t -> unit) -> (unit -> 'a) -> 'a
 (** [let@ () = with_cancel_callback cb in <e>] evaluates [e]
