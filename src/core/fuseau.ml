@@ -55,5 +55,7 @@ let sleep_s = Sleep.sleep_s
 let get_scheduler = Utils_.get_sched "get_scheduler"
 
 module Private_ = struct
+  module TLS = Common_.TLS
+
   let suspend = Fiber.suspend
 end

@@ -1,13 +1,17 @@
+module F = Fuseau_unix
+
 let ( let@ ) = ( @@ )
 let pf = Printf.printf
+let verbose = ref false
 
 let main ~port () =
   pf "serve on localhost:%d\n%!" port;
 
-  let addr = Fuseau.Net.Sockaddr.inet_local port in
+  let addr = F.Net.Sockaddr.inet_local port in
   let@ server =
-    Fuseau.Net.TCP_server.with_serve addr (fun client_addr ic oc ->
-        pf "handle client on %s\n%!" (Fuseau.Net.Sockaddr.show client_addr);
+    F.Net.TCP_server.with_serve addr (fun client_addr ic oc ->
+        if !verbose then
+          pf "handle client on %s\n%!" (F.Net.Sockaddr.show client_addr);
 
         let buf = Bytes.create 256 in
         let continue = ref true in
@@ -20,16 +24,19 @@ let main ~port () =
             Fuseau.IO_out.flush oc
           )
         done;
-        pf "done with client on %s\n%!" (Fuseau.Net.Sockaddr.show client_addr))
+        if !verbose then
+          pf "done with client on %s\n%!" (F.Net.Sockaddr.show client_addr))
   in
-  Fuseau.Net.TCP_server.join server;
+  F.Net.TCP_server.join server;
   print_endline "exit"
 
 let () =
   let@ () = Trace_tef.with_setup () in
-  let port = ref 5656 in
-  let opts = [ "-p", Arg.Set_int port, " port" ] |> Arg.align in
+  let port = ref 1234 in
+  let opts =
+    [ "-p", Arg.Set_int port, " port"; "-v", Arg.Set verbose, " verbose" ]
+    |> Arg.align
+  in
   Arg.parse opts ignore "echo_server";
 
-  let loop = new Fuseau_unix.ev_loop in
-  Fuseau.main ~loop (main ~port:!port)
+  F.main (main ~port:!port)

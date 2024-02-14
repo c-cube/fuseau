@@ -114,6 +114,15 @@ module Fiber : sig
   (** Wait for fiber to be done and call the callback
     with the result. If the fiber is done already then the
     callback is invoked immediately with its result. *)
+
+  (**/**)
+
+  module Private_ : sig
+    val create : ?name:string -> unit -> 'a t
+    val cancel : _ t -> Exn_bt.t -> unit
+  end
+
+  (**/**)
 end
 
 (** Fiber-local storage.
@@ -468,6 +477,8 @@ val main : loop:Event_loop.t -> (unit -> 'a) -> 'a
 
 (** Implementation details that should only be used by experts *)
 module Private_ : sig
+  module TLS = Common_.TLS
+
   val suspend : before_suspend:(wakeup:(unit -> unit) -> unit) -> unit
 end
 

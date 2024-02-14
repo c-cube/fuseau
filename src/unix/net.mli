@@ -34,3 +34,7 @@ module TCP_server : sig
   val with_serve :
     Sockaddr.t -> (Sockaddr.t -> IO_in.t -> IO_out.t -> unit) -> (t -> 'a) -> 'a
 end
+
+module TCP_client : sig
+  val with_connect : Unix.sockaddr -> (IO_in.t -> IO_out.t -> 'a) -> 'a
+end

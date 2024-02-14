@@ -1,0 +1,4 @@
+
+(executables
+  (names count echo_server echo_client)
+  (libraries fuseau trace.core fuseau.unix trace-tef))

@@ -1,5 +1,4 @@
 open Common_
-open Utils_
 
 module Inet_addr = struct
   type t = Unix.inet_addr
@@ -42,10 +41,10 @@ module TCP_server = struct
 
   let stop_ fiber =
     let ebt = Exn_bt.get Stop in
-    Fiber.cancel fiber ebt
+    Fuseau.Fiber.Private_.cancel fiber ebt
 
   let stop self = stop_ self.fiber
-  let join self = Fiber.await self.fiber
+  let join self = Fuseau.await self.fiber
 
   let with_serve (addr : Sockaddr.t) handle_client (f : t -> 'a) : 'a =
     let sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
@@ -55,17 +54,15 @@ module TCP_server = struct
     Unix.setsockopt sock Unix.SO_REUSEADDR true;
     Unix.listen sock 32;
 
-    let fiber = Fiber.create () in
+    let fiber = Fuseau.Fiber.Private_.create () in
     let self = { fiber } in
-
-    let sched = get_sched "tcp_server.with_serve" () in
 
     let loop_client client_sock client_addr : unit =
       Unix.set_nonblock client_sock;
       Unix.setsockopt client_sock Unix.TCP_NODELAY true;
 
-      let ic = IO_in.of_unix_fd client_sock in
-      let oc = IO_out.of_unix_fd client_sock in
+      let ic = IO_unix.IO_in.of_unix_fd client_sock in
+      let oc = IO_unix.IO_out.of_unix_fd client_sock in
       let@ () =
         Fun.protect ~finally:(fun () ->
             IO_in.close ic;
@@ -79,24 +76,27 @@ module TCP_server = struct
         match Unix.accept sock with
         | client_sock, client_addr ->
           ignore
-            (Scheduler.spawn ~propagate_cancel_to_parent:false (fun () ->
+            (Fuseau.spawn ~propagate_cancel_to_parent:false (fun () ->
                  loop_client client_sock client_addr)
               : _ Fiber.t)
         | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) ->
           (* suspend *)
-          Fiber.suspend ~before_suspend:(fun ~wakeup ->
+          let loop = U_loop.cur () in
+          Fuseau.Private_.suspend ~before_suspend:(fun ~wakeup ->
               (* FIXME: possible race condition: the socket became readable
                   in the mid-time and we won't get notified. We need to call
                   [accept] after subscribing to [on_readable]. *)
-              let loop = Scheduler.ev_loop sched in
               ignore
-                (loop#on_readable sock (fun _ev -> wakeup ()) : Cancel_handle.t))
+                (loop#on_readable sock (fun _ev ->
+                     wakeup ();
+                     Cancel_handle.cancel _ev)
+                  : Cancel_handle.t))
       done
     in
 
     let loop_fiber =
-      Scheduler.spawn_as_child_of ~propagate_cancel_to_parent:true sched fiber
-        loop
+      let sched = Fuseau.get_scheduler () in
+      Fuseau.spawn_as_child_of ~propagate_cancel_to_parent:true sched fiber loop
     in
     let finally () =
       stop_ loop_fiber;
@@ -104,4 +104,39 @@ module TCP_server = struct
     in
     let@ () = Fun.protect ~finally in
     f self
+end
+
+module TCP_client = struct
+  let with_connect addr (f : IO_in.t -> IO_out.t -> 'a) : 'a =
+    let sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+    Unix.set_nonblock sock;
+    Unix.setsockopt sock Unix.TCP_NODELAY true;
+
+    (* connect asynchronously *)
+    while
+      try
+        Unix.connect sock addr;
+        false
+      with
+      | Unix.Unix_error
+          ((Unix.EWOULDBLOCK | Unix.EINPROGRESS | Unix.EAGAIN), _, _)
+      ->
+        Fuseau.Private_.suspend ~before_suspend:(fun ~wakeup ->
+            let loop = U_loop.cur () in
+            ignore
+              (loop#on_writable sock (fun _ev ->
+                   wakeup ();
+                   Cancel_handle.cancel _ev)
+                : Cancel_handle.t));
+        true
+    do
+      ()
+    done;
+
+    let ic = IO_unix.IO_in.of_unix_fd sock in
+    let oc = IO_unix.IO_out.of_unix_fd sock in
+
+    let finally () = try Unix.close sock with _ -> () in
+    let@ () = Fun.protect ~finally in
+    f ic oc
 end
