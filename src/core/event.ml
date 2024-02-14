@@ -17,9 +17,18 @@ let rec select_rec_ brs =
       (* no branch worked. Now let's wait. *)
       let cancel_handlers = ref [] in
       Fiber.suspend ~before_suspend:(fun ~wakeup ->
+          (* make sure we call [wakeup] only once *)
+          let woken_up = ref false in
+          let wakeup_once () =
+            if not !woken_up then (
+              woken_up := true;
+              wakeup ()
+            )
+          in
+
           List.iter
             (fun (When (ev, _)) ->
-              let cancel = ev.wait wakeup in
+              let cancel = ev.wait wakeup_once in
               if cancel != Cancel_handle.dummy then
                 cancel_handlers := cancel :: !cancel_handlers)
             brs);
