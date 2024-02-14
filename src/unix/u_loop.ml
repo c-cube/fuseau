@@ -131,6 +131,7 @@ class unix_ev_loop =
   object
     (* val read_ : (cancel_handle -> unit) Int_tbl.t = Int_tbl.create 32 *)
     method one_step ~block () : unit =
+      let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau-unix.iter" in
       let delay = run_timer_ _timer in
 
       let delay =

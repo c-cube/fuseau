@@ -1,6 +1,7 @@
 open Common_
 include Fuseau
 module IO_unix = IO_unix
+module Timer = Timer
 module Net = Net
 
 let main f =
