@@ -34,3 +34,8 @@ jobs:
       - run: opam exec -- dune build @install
       - run: opam exec -- dune runtest
 
+      # install depopts
+      - run: opam install moonpool
+      - run: opam exec -- dune build @install
+      - run: opam exec -- dune runtest
+
