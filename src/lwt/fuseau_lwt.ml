@@ -20,15 +20,15 @@ module Action = struct
   (** Action that we ask the lwt loop to perform, from the outside *)
   type t =
     | Wakeup_loop  (** The only point of this is to wakeup the event loop *)
-    | Wait_readable of Unix.file_descr * cb
-    | Wait_writable of Unix.file_descr * cb
+    | Wait_readable of Unix.file_descr * Lwt_engine.event option ref * cb
+    | Wait_writable of Unix.file_descr * Lwt_engine.event option ref * cb
 
   (** Perform the action from within the Lwt thread *)
   let perform (self : t) : unit =
     match self with
     | Wakeup_loop -> ()
-    | Wait_readable (fd, cb) -> ignore (Lwt_engine.on_readable fd cb : event)
-    | Wait_writable (fd, cb) -> ignore (Lwt_engine.on_writable fd cb : event)
+    | Wait_readable (fd, r, cb) -> r := Some (Lwt_engine.on_readable fd cb)
+    | Wait_writable (fd, r, cb) -> r := Some (Lwt_engine.on_writable fd cb)
 end
 
 module Action_queue = struct
@@ -161,6 +161,7 @@ module IO_lwt = struct
             Perform_action_in_lwt.schedule
             @@ Action.Wait_readable
                  ( fd,
+                   ref None,
                    fun _ev ->
                      wakeup ();
                      Lwt_engine.stop_event _ev ));
@@ -180,6 +181,7 @@ module IO_lwt = struct
             Perform_action_in_lwt.schedule
             @@ Action.Wait_writable
                  ( fd,
+                   ref None,
                    fun ev ->
                      wakeup ();
                      Lwt_engine.stop_event ev ));
@@ -196,6 +198,72 @@ module IO_lwt = struct
       len := !len - n
     done
 end
+
+let ev_read fd buf i len : int Event.t =
+  let poll () =
+    if len = 0 then
+      Some (Ok 0)
+    else (
+      match Unix.read fd buf i len with
+      | n -> Some (Ok n)
+      | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) ->
+        None
+      | exception Unix.Unix_error (Unix.ECONNRESET, _, _) -> Some (Ok 0)
+      | exception e ->
+        let ebt = Exn_bt.get e in
+        Some (Error ebt)
+    )
+  in
+  let wait cb =
+    let r = ref None in
+    let cancel =
+      Cancel_handle.make
+        ~cancel:(fun () -> Option.iter Lwt_engine.stop_event !r)
+        ()
+    in
+    Perform_action_in_lwt.schedule
+    @@ Action.Wait_readable
+         ( fd,
+           r,
+           fun _ev ->
+             cb ();
+             Lwt_engine.stop_event _ev );
+    cancel
+  in
+  { poll; wait }
+
+let ev_write fd buf i len : int Event.t =
+  let poll () =
+    if len = 0 then
+      Some (Ok 0)
+    else (
+      match Unix.write fd buf i len with
+      | n -> Some (Ok n)
+      | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) ->
+        None
+      | exception Unix.Unix_error (Unix.ECONNRESET, _, _) -> Some (Ok 0)
+      | exception e ->
+        let ebt = Exn_bt.get e in
+        Some (Error ebt)
+    )
+  in
+  let wait cb =
+    let r = ref None in
+    let cancel =
+      Cancel_handle.make
+        ~cancel:(fun () -> Option.iter Lwt_engine.stop_event !r)
+        ()
+    in
+    Perform_action_in_lwt.schedule
+    @@ Action.Wait_writable
+         ( fd,
+           r,
+           fun _ev ->
+             cb ();
+             Lwt_engine.stop_event _ev );
+    cancel
+  in
+  { poll; wait }
 
 module Iostream = struct
   module Out = struct
@@ -327,6 +395,7 @@ module Net = struct
               Perform_action_in_lwt.schedule
               @@ Action.Wait_writable
                    ( sock,
+                     ref None,
                      fun ev ->
                        wakeup ();
                        Lwt_engine.stop_event ev ));

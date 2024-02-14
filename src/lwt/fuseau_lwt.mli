@@ -26,6 +26,9 @@ module IO_lwt : sig
   val write : file_descr -> bytes -> int -> int -> unit
 end
 
+val ev_read : Unix.file_descr -> bytes -> int -> int -> int Event.t
+val ev_write : Unix.file_descr -> bytes -> int -> int -> int Event.t
+
 module Iostream : sig
   module In : sig
     include module type of Iostream.In
