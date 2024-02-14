@@ -59,11 +59,8 @@ let main ~loop:ev_loop (main : unit -> 'a) : 'a =
     in
     self.main_fiber <- Fiber.Any_fiber fib;
 
-    Printf.printf "main fiber start\n%!";
-    Trace.message "MAIN FIBER START";
     main_loop_ self;
-    Trace.message "MAIN FIBER DONE";
-    Printf.printf "main fiber done\n%!";
+    Trace.message "main loop done";
     fib
   in
 
