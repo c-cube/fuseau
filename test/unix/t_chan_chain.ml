@@ -58,11 +58,13 @@ let rec mk_chain n i1 i2 send_res : unit =
   )
 
 let () =
-  let n = 200 in
+  let n = 600 in
   let c1 = F.Chan.create ~max_size:4 () in
   let c2 = F.Chan.create ~max_size:4 () in
 
   let send_res = F.Chan.create ~max_size:10 () in
+
+  let t_start = F.Time.monotonic_time_s () in
 
   let res =
     F.main (fun () ->
@@ -81,5 +83,10 @@ let () =
         let x = F.Chan.receive_exn send_res in
         x)
   in
+
+  let n_events = n * 1000 * 2 in
+  let elapsed = F.Time.monotonic_time_s () -. t_start in
+  Printf.eprintf "%d events in %.3fs (%.1f evs/s)\n%!" n_events elapsed
+    (float n_events /. elapsed);
 
   Printf.printf "res=%.0f\n%!" res
