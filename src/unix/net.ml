@@ -61,12 +61,12 @@ module TCP_server = struct
       Unix.set_nonblock client_sock;
       Unix.setsockopt client_sock Unix.TCP_NODELAY true;
 
-      let ic = IO_unix.IO_in.of_unix_fd client_sock in
-      let oc = IO_unix.IO_out.of_unix_fd client_sock in
+      let ic = IO_unix.In.of_unix_fd client_sock in
+      let oc = IO_unix.Out.of_unix_fd client_sock in
       let@ () =
         Fun.protect ~finally:(fun () ->
-            IO_in.close ic;
-            IO_out.close oc)
+            Iostream.In.close ic;
+            Iostream.Out.close oc)
       in
       handle_client client_addr ic oc
     in
@@ -107,7 +107,7 @@ module TCP_server = struct
 end
 
 module TCP_client = struct
-  let with_connect addr (f : IO_in.t -> IO_out.t -> 'a) : 'a =
+  let with_connect addr (f : Iostream.In.t -> Iostream.Out.t -> 'a) : 'a =
     let sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
     Unix.set_nonblock sock;
     Unix.setsockopt sock Unix.TCP_NODELAY true;
@@ -133,8 +133,8 @@ module TCP_client = struct
       ()
     done;
 
-    let ic = IO_unix.IO_in.of_unix_fd sock in
-    let oc = IO_unix.IO_out.of_unix_fd sock in
+    let ic = IO_unix.In.of_unix_fd sock in
+    let oc = IO_unix.Out.of_unix_fd sock in
 
     let finally () = try Unix.close sock with _ -> () in
     let@ () = Fun.protect ~finally in

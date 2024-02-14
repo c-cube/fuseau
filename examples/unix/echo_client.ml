@@ -32,11 +32,11 @@ let main ~port ~n ~n_conn () =
             Trace.enter_manual_sub_span ~parent:_task_sp ~__FILE__ ~__LINE__
               "write.loop" ~data:(fun () -> [ "iter", `Int _j ])
           in
-          F.IO_out.output_string oc "hello";
-          F.IO_out.flush oc;
+          F.Iostream.Out.output_string oc "hello";
+          F.Iostream.Out.flush oc;
 
           (* read back what we wrote *)
-          F.IO_in.really_input ic buf 0 (String.length "hello");
+          F.Iostream.In.really_input ic buf 0 (String.length "hello");
           Trace.exit_manual_span _sp;
           F.yield ()
         done );

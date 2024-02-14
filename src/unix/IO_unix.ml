@@ -49,8 +49,8 @@ let write fd buf i len : unit =
     len := !len - n
   done
 
-module IO_out = struct
-  include IO_out
+module Out = struct
+  include Iostream.Out
 
   let of_unix_fd ?(close_noerr = false) ?(buf = Bytes.create _default_buf_size)
       fd : t =
@@ -103,8 +103,8 @@ module IO_out = struct
     end
 end
 
-module IO_in = struct
-  include IO_in
+module In = struct
+  include Iostream.In
 
   let of_unix_fd ?(close_noerr = false) ?(buf = Bytes.create _default_buf_size)
       (fd : Unix.file_descr) : t =

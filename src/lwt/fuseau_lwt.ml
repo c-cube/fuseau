@@ -22,12 +22,6 @@ module Action = struct
     | Wakeup_loop  (** The only point of this is to wakeup the event loop *)
     | Wait_readable of Unix.file_descr * cb
     | Wait_writable of Unix.file_descr * cb
-    | Sleep of float * bool * cb
-    (* TODO: provide actions with cancellation, alongside a "select" operation *)
-    (* | Cancel of event *)
-    | On_termination : 'a Lwt.t * ('a Exn_bt.result -> unit) -> t
-    | Wakeup : 'a Lwt.u * 'a -> t
-    | Wakeup_exn : _ Lwt.u * exn -> t
 
   (** Perform the action from within the Lwt thread *)
   let perform (self : t) : unit =
@@ -35,14 +29,6 @@ module Action = struct
     | Wakeup_loop -> ()
     | Wait_readable (fd, cb) -> ignore (Lwt_engine.on_readable fd cb : event)
     | Wait_writable (fd, cb) -> ignore (Lwt_engine.on_writable fd cb : event)
-    | Sleep (f, repeat, cb) -> ignore (Lwt_engine.on_timer f repeat cb : event)
-    (* | Cancel ev -> Lwt_engine.stop_event ev *)
-    | On_termination (fut, f) ->
-      Lwt.on_any fut
-        (fun x -> f @@ Ok x)
-        (fun exn -> f @@ Error (Exn_bt.get_callstack 10 exn))
-    | Wakeup (prom, x) -> Lwt.wakeup prom x
-    | Wakeup_exn (prom, e) -> Lwt.wakeup_exn prom e
 end
 
 module Action_queue = struct
@@ -211,90 +197,92 @@ module IO_lwt = struct
     done
 end
 
-module IO_out_lwt = struct
-  include IO_out
+module Iostream = struct
+  module Out = struct
+    include Iostream.Out
 
-  let of_unix_fd ?(close_noerr = false) ?(buf = Bytes.create _default_buf_size)
-      fd : t =
-    let buf_off = ref 0 in
+    let of_unix_fd ?(close_noerr = false)
+        ?(buf = Bytes.create _default_buf_size) fd : t =
+      let buf_off = ref 0 in
 
-    let[@inline] is_full () = !buf_off = Bytes.length buf in
+      let[@inline] is_full () = !buf_off = Bytes.length buf in
 
-    let flush () =
-      if !buf_off > 0 then (
-        IO_lwt.write fd buf 0 !buf_off;
-        buf_off := 0
-      )
-    in
+      let flush () =
+        if !buf_off > 0 then (
+          IO_lwt.write fd buf 0 !buf_off;
+          buf_off := 0
+        )
+      in
 
-    object
-      method output_char c =
-        if is_full () then flush ();
-        Bytes.set buf !buf_off c;
-        incr buf_off
-
-      method output bs i len : unit =
-        let i = ref i in
-        let len = ref len in
-
-        while !len > 0 do
-          (* make space *)
+      object
+        method output_char c =
           if is_full () then flush ();
+          Bytes.set buf !buf_off c;
+          incr buf_off
 
-          let n = min !len (Bytes.length buf - !buf_off) in
-          Bytes.blit bs !i buf !buf_off n;
-          buf_off := !buf_off + n;
-          i := !i + n;
-          len := !len - n
-        done;
-        (* if full, write eagerly *)
-        if is_full () then flush ()
+        method output bs i len : unit =
+          let i = ref i in
+          let len = ref len in
 
-      method close () =
-        if close_noerr then (
-          try
+          while !len > 0 do
+            (* make space *)
+            if is_full () then flush ();
+
+            let n = min !len (Bytes.length buf - !buf_off) in
+            Bytes.blit bs !i buf !buf_off n;
+            buf_off := !buf_off + n;
+            i := !i + n;
+            len := !len - n
+          done;
+          (* if full, write eagerly *)
+          if is_full () then flush ()
+
+        method close () =
+          if close_noerr then (
+            try
+              flush ();
+              Unix.close fd
+            with _ -> ()
+          ) else (
             flush ();
             Unix.close fd
-          with _ -> ()
-        ) else (
-          flush ();
-          Unix.close fd
-        )
+          )
 
-      method flush = flush
-    end
-end
+        method flush = flush
+      end
+  end
 
-module IO_in_lwt = struct
-  include IO_in
+  module In = struct
+    include Iostream.In
 
-  let of_unix_fd ?(close_noerr = false) ?(buf = Bytes.create _default_buf_size)
-      (fd : Unix.file_descr) : t =
-    let buf_len = ref 0 in
-    let buf_off = ref 0 in
+    let of_unix_fd ?(close_noerr = false)
+        ?(buf = Bytes.create _default_buf_size) (fd : Unix.file_descr) : t =
+      let buf_len = ref 0 in
+      let buf_off = ref 0 in
 
-    let refill () =
-      buf_off := 0;
-      buf_len := IO_lwt.read fd buf 0 (Bytes.length buf)
-    in
+      let refill () =
+        buf_off := 0;
+        buf_len := IO_lwt.read fd buf 0 (Bytes.length buf)
+      in
 
-    object
-      method input b i len : int =
-        if !buf_len = 0 then refill ();
-        let n = min len !buf_len in
-        if n > 0 then (
-          Bytes.blit buf !buf_off b i n;
-          buf_off := !buf_off + n;
-          buf_len := !buf_len - n
-        );
-        n
+      object
+        method input b i len : int =
+          if !buf_len = 0 then refill ();
+          let n = min len !buf_len in
+          if n > 0 then (
+            Bytes.blit buf !buf_off b i n;
+            buf_off := !buf_off + n;
+            buf_len := !buf_len - n
+          );
+          n
 
-      method close () =
-        if close_noerr then (
-          try Unix.close fd with _ -> ()
-        ) else
-          Unix.close fd
-    end
+        method close () =
+          if close_noerr then (
+            try Unix.close fd with _ -> ()
+          ) else
+            Unix.close fd
+      end
+  end
 end
 
 module Net = struct
@@ -306,10 +294,10 @@ module Net = struct
         Lwt_io.establish_server_with_client_socket ?backlog ?no_close addr
           (fun client_addr client_sock ->
             let ic =
-              IO_in_lwt.of_unix_fd @@ Lwt_unix.unix_file_descr client_sock
+              Iostream.In.of_unix_fd @@ Lwt_unix.unix_file_descr client_sock
             in
             let oc =
-              IO_out_lwt.of_unix_fd @@ Lwt_unix.unix_file_descr client_sock
+              Iostream.Out.of_unix_fd @@ Lwt_unix.unix_file_descr client_sock
             in
 
             spawn_as_lwt ~name:"tcp.server.handler" (fun () ->
@@ -321,7 +309,7 @@ module Net = struct
   end
 
   module TCP_client = struct
-    let with_connect addr (f : IO_in.t -> IO_out.t -> 'a) : 'a =
+    let with_connect addr (f : Iostream.In.t -> Iostream.Out.t -> 'a) : 'a =
       let sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
       Unix.set_nonblock sock;
       Unix.setsockopt sock Unix.TCP_NODELAY true;
@@ -347,8 +335,8 @@ module Net = struct
         ()
       done;
 
-      let ic = IO_in_lwt.of_unix_fd sock in
-      let oc = IO_out_lwt.of_unix_fd sock in
+      let ic = Iostream.In.of_unix_fd sock in
+      let oc = Iostream.Out.of_unix_fd sock in
 
       let finally () = try Unix.close sock with _ -> () in
       let@ () = Fun.protect ~finally in

@@ -31,13 +31,13 @@ let main ~port () : unit =
           "read.loop"
       in
       Trace.message "read";
-      let n = F.IO_in.input ic buf 0 (Bytes.length buf) in
+      let n = F.Iostream.In.input ic buf 0 (Bytes.length buf) in
       if n = 0 then
         continue := false
       else (
         Trace.messagef (fun k -> k "got %dB" n);
-        F.IO_out.output oc buf 0 n;
-        F.IO_out.flush oc;
+        F.Iostream.Out.output oc buf 0 n;
+        F.Iostream.Out.flush oc;
         Trace.message "write" (* MU.sleep_s 0.02 *)
       );
       Trace.exit_manual_span _sp

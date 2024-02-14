@@ -16,12 +16,12 @@ let main ~port () =
         let buf = Bytes.create 256 in
         let continue = ref true in
         while !continue do
-          let n = Fuseau.IO_in.input ic buf 0 (Bytes.length buf) in
+          let n = F.Iostream.In.input ic buf 0 (Bytes.length buf) in
           if n = 0 then
             continue := false
           else (
-            Fuseau.IO_out.output oc buf 0 n;
-            Fuseau.IO_out.flush oc
+            F.Iostream.Out.output oc buf 0 n;
+            F.Iostream.Out.flush oc
           )
         done;
         if !verbose then
