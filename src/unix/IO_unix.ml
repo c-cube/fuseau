@@ -4,23 +4,36 @@ end
 
 type file_descr = Unix.file_descr
 
+let await_readable fd =
+  let loop = U_loop.cur () in
+  (* wait for FD to be ready *)
+  Fuseau.Private_.suspend ~before_suspend:(fun ~wakeup ->
+      ignore
+        (loop#on_readable fd (fun ev ->
+             wakeup ();
+             Cancel_handle.cancel ev)
+          : Cancel_handle.t))
+
 let rec read fd buf i len : int =
   if len = 0 then
     0
   else (
     match Unix.read fd buf i len with
     | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) ->
-      let loop = U_loop.cur () in
-      (* wait for FD to be ready *)
-      Fuseau.Private_.suspend ~before_suspend:(fun ~wakeup ->
-          ignore
-            (loop#on_readable fd (fun ev ->
-                 wakeup ();
-                 Cancel_handle.cancel ev)
-              : Cancel_handle.t));
+      await_readable fd;
       read fd buf i len
     | n -> n
   )
+
+let await_writable fd =
+  let loop = U_loop.cur () in
+  (* wait for FD to be ready *)
+  Fuseau.Private_.suspend ~before_suspend:(fun ~wakeup ->
+      ignore
+        (loop#on_writable fd (fun ev ->
+             wakeup ();
+             Cancel_handle.cancel ev)
+          : Cancel_handle.t))
 
 let rec write_once fd buf i len : int =
   if len = 0 then
@@ -28,14 +41,7 @@ let rec write_once fd buf i len : int =
   else (
     match Unix.write fd buf i len with
     | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) ->
-      let loop = U_loop.cur () in
-      (* wait for FD to be ready *)
-      Fuseau.Private_.suspend ~before_suspend:(fun ~wakeup ->
-          ignore
-            (loop#on_writable fd (fun ev ->
-                 wakeup ();
-                 Cancel_handle.cancel ev)
-              : Cancel_handle.t));
+      await_writable fd;
       write_once fd buf i len
     | n -> n
   )
