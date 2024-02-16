@@ -5,6 +5,8 @@ type file_descr = Unix.file_descr
 val read : file_descr -> bytes -> int -> int -> int
 val write_once : file_descr -> bytes -> int -> int -> int
 val write : file_descr -> bytes -> int -> int -> unit
+val await_readable : file_descr -> unit
+val await_writable : file_descr -> unit
 
 module In : sig
   include module type of Iostream.In
