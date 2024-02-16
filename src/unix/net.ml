@@ -46,7 +46,7 @@ module TCP_server = struct
   let stop self = stop_ self.fiber
   let join self = Fuseau.await self.fiber
 
-  let with_serve (addr : Sockaddr.t) handle_client (f : t -> 'a) : 'a =
+  let with_serve' (addr : Sockaddr.t) handle_client (f : t -> 'a) : 'a =
     let sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
 
     Unix.bind sock addr;
@@ -61,14 +61,11 @@ module TCP_server = struct
       Unix.set_nonblock client_sock;
       Unix.setsockopt client_sock Unix.TCP_NODELAY true;
 
-      let ic = IO_unix.In.of_unix_fd client_sock in
-      let oc = IO_unix.Out.of_unix_fd client_sock in
       let@ () =
         Fun.protect ~finally:(fun () ->
-            Iostream.In.close ic;
-            Iostream.Out.close oc)
+            try Unix.close client_sock with _ -> ())
       in
-      handle_client client_addr ic oc
+      handle_client client_addr client_sock
     in
 
     let loop () =
@@ -104,10 +101,18 @@ module TCP_server = struct
     in
     let@ () = Fun.protect ~finally in
     f self
+
+  let with_serve (addr : Sockaddr.t) handle_client (f : t -> 'a) : 'a =
+    with_serve' addr
+      (fun client_addr client_sock ->
+        let ic = IO_unix.In.of_unix_fd client_sock in
+        let oc = IO_unix.Out.of_unix_fd client_sock in
+        handle_client client_addr ic oc)
+      f
 end
 
 module TCP_client = struct
-  let with_connect addr (f : Iostream.In.t -> Iostream.Out.t -> 'a) : 'a =
+  let with_connect' addr (f : Unix.file_descr -> 'a) : 'a =
     let sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
     Unix.set_nonblock sock;
     Unix.setsockopt sock Unix.TCP_NODELAY true;
@@ -133,10 +138,13 @@ module TCP_client = struct
       ()
     done;
 
-    let ic = IO_unix.In.of_unix_fd sock in
-    let oc = IO_unix.Out.of_unix_fd sock in
-
     let finally () = try Unix.close sock with _ -> () in
     let@ () = Fun.protect ~finally in
-    f ic oc
+    f sock
+
+  let with_connect addr (f : Iostream.In.t -> Iostream.Out.t -> 'a) : 'a =
+    with_connect' addr (fun sock ->
+        let ic = IO_unix.In.of_unix_fd sock in
+        let oc = IO_unix.Out.of_unix_fd sock in
+        f ic oc)
 end
