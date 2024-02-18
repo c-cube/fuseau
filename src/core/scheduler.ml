@@ -5,6 +5,7 @@ type microtask = unit -> unit
 type task =
   | T_start : 'a Fiber.t * (unit -> 'a) -> task
   | T_cont : Fiber.any * ('a, unit) ED.continuation * 'a -> task
+  | T_discont : (_, unit) ED.continuation * Exn_bt.t -> task
   | T_run : (unit -> unit) -> task
 
 type t = {
@@ -190,7 +191,13 @@ let run_task (self : t) (task : task) : unit =
                 Event_loop.interrupt_if_in_blocking_section self.ev_loop
               )
             in
-            before_suspend ~wakeup)
+
+            match Fiber.Private_.as_cancelled fiber with
+            | Some ebt ->
+              (* fail the fiber *)
+              run_from_anywhere self (fun () ->
+                  schedule_no_check_ self (T_discont (k, ebt)))
+            | None -> before_suspend ~wakeup)
       | Effects.Yield ->
         Some
           (fun k ->
@@ -219,6 +226,7 @@ let run_task (self : t) (task : task) : unit =
       self.cur_fiber <- Some any_fib;
       trace_enter_fiber_ self fiber;
       ED.continue k x)
+  | T_discont (k, ebt) -> Exn_bt.discontinue k ebt
   | T_run f -> f ()
 
 let run_iteration (self : t) : unit =

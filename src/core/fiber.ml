@@ -30,6 +30,12 @@ let[@inline] is_cancelled self =
   | Done (Error _) -> true
   | _ -> false
 
+let as_cancelled self =
+  match A.get self.state with
+  | Done (Error ebt) -> Some ebt
+  | Wait { already_done = Some (Error ebt); _ } -> Some ebt
+  | _ -> None
+
 (** Register [f] to be called when the fiber ends.
     If the fiber is done already, call [f] immediately.
     [f] is called exactly once. *)
@@ -310,4 +316,5 @@ let yield () =
 module Private_ = struct
   let create = create
   let cancel = cancel
+  let as_cancelled = as_cancelled
 end
