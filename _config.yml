@@ -1,2 +1,2 @@
 theme: jekyll-theme-minimal
-include: [dev, dev/_odoc_theme]
+include: [dev, dev/_odoc-theme]
