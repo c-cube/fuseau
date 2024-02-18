@@ -285,8 +285,13 @@ end
 
 module Cancel_handle = Cancel_handle
 
-(** {2 IO} *)
+(** {2 IO streams} *)
 
+(** IO streams.
+
+    These streams of bytes can be used for read and write operations.
+    Their usage is not required, in some event loops
+    such as {!Fuseau_lwt}. *)
 module Iostream : sig
   (** Output stream. *)
   module Out : sig
@@ -419,7 +424,7 @@ end
 (** {2 Sleep} *)
 
 val sleep_s : float -> unit
-(** Put the current fiber to sleep for the amount of seconds. *)
+(** Put the current fiber to sleep for that many seconds. *)
 
 (** {2 Re-exports} *)
 
