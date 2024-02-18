@@ -1,4 +1,18 @@
-(** Interoperability between Fuseau and Moonpool *)
+(** Interoperability between Fuseau and Moonpool.
+
+   The goal of this optional library is to make it
+   easier to defer tasks to a {!Moonpool} thread pool
+   from within [Fuseau]. Any CPU heavy task (e.g. cryptographic
+   hashing, decoding large JSON values, sorting, etc.) that might
+   take at least hundreds of microseconds might benefit from
+   running in a thread pool; this also allows programs to
+   use multiple cores event though the [Fuseau] event loop
+   only runs on a single thread.
+
+   For an example, see the web crawler [examples/lwt/argiope/argiope.ml]
+   where the Moonpool runner is used to parse HTML pages
+   in the background.
+*)
 
 val await_fut : 'a Moonpool.Fut.t -> 'a
 (** [await_fut fut] suspends the current fiber until

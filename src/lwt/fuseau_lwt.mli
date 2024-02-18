@@ -1,4 +1,10 @@
-(** Interoperability between Fuseau and Lwt *)
+(** Interoperability between Fuseau and Lwt.
+
+    This combines {!Fuseau}'s fibers with the Lwt event loop
+    (ie {!Lwt_engine}) to deal with timers and file descriptors
+    readiness. In essence, one can use fibers and structured concurrency
+    from [Fuseau] alongside Lwt libraries and Lwt IO operations.
+*)
 
 (** {2 Re-export of fuseau} *)
 
