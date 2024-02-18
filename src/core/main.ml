@@ -16,6 +16,10 @@ let main_loop_ (self : t) : unit =
   let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau.main" in
   let (Any_fiber main_fiber) = self.main_fiber in
 
+  (* make sure to exit the main loop when the main fiber exits *)
+  Fiber.on_res main_fiber (fun _ ->
+      Event_loop.interrupt_if_in_blocking_section self.ev_loop);
+
   while not (Fiber.is_done main_fiber) do
     (* let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "fuseau.loop.step" in *)
     Trace.counter_int "fuseau.n-tasks" (Scheduler.n_queued_tasks self.sched);
