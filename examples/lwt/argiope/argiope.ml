@@ -92,8 +92,16 @@ module Run = struct
     Soup.fold
       (fun l n ->
         try
-          let url' = Soup.R.attribute "href" n in
-          Uri.of_string url' :: l
+          let url' = Uri.of_string @@ Soup.R.attribute "href" n in
+          let path = Uri.path url' in
+          let path =
+            if Filename.is_relative path then
+              Filename.concat (Uri.path @@ Uri.of_string in_url) path
+            else
+              path
+          in
+          let url' = Uri.with_path url' path in
+          url' :: l
         with _ -> l)
       [] nodes
 
@@ -105,6 +113,7 @@ module Run = struct
 
   let process_task (self : t) ~idx ~client (uri : Uri.t) : unit =
     self.in_flight <- 1 + self.in_flight;
+    Trace.messagef (fun k -> k "crawl %s" (Uri.to_string uri));
     if !verbose_ > 0 then
       Printf.eprintf "[w%d] crawl %s\n%!" idx (Uri.to_string uri);
 
@@ -167,6 +176,8 @@ module Run = struct
       (* bad URL! *)
       self.bad <- uri :: self.bad);
     self.in_flight <- self.in_flight - 1;
+    if !verbose_ > 0 then Printf.eprintf "[w%d] done with crawling\n%!" idx;
+    Trace.message "done";
     check_if_done_ self
 
   let worker (self : t) ~(idx : int) : unit =
@@ -187,7 +198,7 @@ module Run = struct
                (Printexc.to_string e))
       )
     done;
-    if !verbose_ > 0 then Printf.eprintf "[w%d] exiting…\n%!" idx;
+    if !verbose_ > 0 then Printf.eprintf "[w%d] worker exiting…\n%!" idx;
     ()
 
   let run (self : t) : Uri.t list * int * int =
