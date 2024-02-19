@@ -86,6 +86,9 @@ let rec receive_exn (self : 'a t) : 'a =
     suspend ~before_suspend:(fun ~wakeup -> Queue.push wakeup self.receivers);
     receive_exn self
 
+let receive (self : 'a t) : 'a option =
+  try Some (receive_exn self) with Closed -> None
+
 let try_receive (self : 'a t) : 'a option =
   if Queue.is_empty self.q then (
     if self.closed then raise Closed;

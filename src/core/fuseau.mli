@@ -72,6 +72,11 @@ module Chan : sig
       as long as items remain in the channel, until the channel
       is entirely drained; then they fail with {!Closed}. *)
 
+  val receive : 'a t -> 'a option
+  (** [receive c] receives an item from [c]. Suspends if
+      the channel is empty but not closed.
+      Returns [None] if the channel is empty and closed. *)
+
   val receive_exn : 'a t -> 'a
   (** [receive_exn c] receives an item from the channel.
       Suspends if the channel is empty and non-closed.
