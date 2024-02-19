@@ -194,8 +194,10 @@ module Run = struct
         | uri ->
           (try process_task self ~idx ~client uri
            with e ->
-             Printf.eprintf "w[%d]: uncaught exn %s\n%!" idx
-               (Printexc.to_string e))
+             let bt = Printexc.get_raw_backtrace () in
+             Printf.eprintf "w[%d]: uncaught exn %s\n%s\n%!" idx
+               (Printexc.to_string e)
+               (Printexc.raw_backtrace_to_string bt))
       )
     done;
     if !verbose_ > 0 then Printf.eprintf "[w%d] worker exiting…\n%!" idx;
@@ -229,9 +231,14 @@ let help_str =
 usage: argiope url [url*] [option*]
 |}
 
+(* avoid race condition caused by a global "lazy" in markup.ml *)
+let _init_lambdasoup () = ignore (Soup.parse "<h1>ohno</h1>")
+
 let main () : int =
   let@ () = Trace_tef.with_setup () in
   Sys.catch_break true;
+
+  _init_lambdasoup ();
   let t0 = Unix.gettimeofday () in
   let domains = ref Str_set.empty in
   let start = ref [] in
