@@ -108,20 +108,24 @@ module Run = struct
   let check_if_done_ self =
     (*Printf.eprintf "CHECK: inflight=%d size=%d\n%!" self.in_flight
       (F.Chan.size self.tasks);*)
-    if self.in_flight = 0 && F.Chan.is_empty self.tasks then
+    if self.in_flight = 0 && F.Chan.is_empty self.tasks then (
+      if !verbose_ > 0 then Printf.eprintf "check if done: true\n%!";
       F.Chan.close self.tasks
+    )
 
   let process_task (self : t) ~idx ~client (uri : Uri.t) : unit =
-    self.in_flight <- 1 + self.in_flight;
+    self.n <- 1 + self.n;
+
     Trace.messagef (fun k -> k "crawl %s" (Uri.to_string uri));
     if !verbose_ > 0 then
       Printf.eprintf "[w%d] crawl %s\n%!" idx (Uri.to_string uri);
 
     (* fetch URL (only 100kb) *)
-    self.n <- 1 + self.n;
     let resp =
       let fut =
-        Ezcurl_lwt.get ~client ~range:"0-100000" ~url:(Uri.to_string uri) ()
+        Ezcurl_lwt.get
+          ~config:Ezcurl_lwt.Config.(default |> max_redirects 10)
+          ~tries:3 ~client ~range:"0-100000" ~url:(Uri.to_string uri) ()
       in
       let@ () = Fuseau.with_cancel_callback (fun _ -> Lwt.cancel fut) in
 
@@ -169,14 +173,15 @@ module Run = struct
               push_task self uri')
           uris
       )
-    | Error (_, msg) ->
+    | Error (errcode, msg) ->
       if !verbose_ > 2 then
-        Printf.eprintf "[w%d] error when fetching %s:\n  %s\n%!" idx
-          (Uri.to_string uri) msg;
+        Printf.eprintf "[w%d] error when fetching %s (code=%d):\n  %s\n%!" idx
+          (Uri.to_string uri)
+          (Curl.int_of_curlCode errcode)
+          msg;
       (* bad URL! *)
       self.bad <- uri :: self.bad);
-    self.in_flight <- self.in_flight - 1;
-    if !verbose_ > 0 then Printf.eprintf "[w%d] done with crawling\n%!" idx;
+    if !verbose_ > 1 then Printf.eprintf "[w%d] done with crawling\n%!" idx;
     Trace.message "done";
     check_if_done_ self
 
@@ -185,26 +190,49 @@ module Run = struct
 
     let continue = ref true in
     while !continue do
-      if self.max >= 0 && self.n + self.in_flight > self.max then (
+      let reached_max = self.max >= 0 && self.n + self.in_flight > self.max in
+      Trace.counter_int "in_flight" self.in_flight;
+      Trace.counter_int "in_flight" self.n;
+      let no_other_task = self.in_flight = 0 && F.Chan.is_empty self.tasks in
+      Trace.message "main loop" ~data:(fun () ->
+          [
+            "no_other_task", `Bool no_other_task;
+            "in_flight", `Int self.in_flight;
+            "reached_max", `Bool reached_max;
+          ]);
+      if reached_max || no_other_task then (
+        Printf.eprintf
+          "[w%d]: exiting main loop (reached_max=%b, no_other_task=%b, n=%d)\n\
+           %!"
+          idx reached_max no_other_task self.n;
         F.Chan.close self.tasks;
         continue := false
       ) else (
-        match F.Chan.receive_exn self.tasks with
-        | exception F.Chan.Closed -> continue := false
-        | uri ->
+        if !verbose_ > 1 then
+          Printf.eprintf
+            "[w%d]: receiving from chan (reached max=%b, no other task=%b, in \
+             flight=%d)\n\
+             %!"
+            idx reached_max no_other_task self.in_flight;
+        match F.Chan.receive self.tasks with
+        | None -> continue := false
+        | Some uri ->
+          self.in_flight <- 1 + self.in_flight;
           (try process_task self ~idx ~client uri
            with e ->
              let bt = Printexc.get_raw_backtrace () in
-             Printf.eprintf "w[%d]: uncaught exn %s\n%s\n%!" idx
+             Printf.eprintf "[w%d]: uncaught exn %s\n%s\n%!" idx
                (Printexc.to_string e)
-               (Printexc.raw_backtrace_to_string bt))
+               (Printexc.raw_backtrace_to_string bt));
+          self.in_flight <- self.in_flight - 1
       )
     done;
     if !verbose_ > 0 then Printf.eprintf "[w%d] worker exiting…\n%!" idx;
     ()
 
   let run (self : t) : Uri.t list * int * int =
-    Printf.printf "run %d jobs…\ndomain(s): [%s]\n%!" self.j
+    Printf.printf "run %d jobs, maximum %d pages…\ndomain(s): [%s]\n%!" self.j
+      self.max
       (String.concat "," @@ Str_set.elements self.domains);
     let workers =
       CCList.init self.w (fun idx ->
