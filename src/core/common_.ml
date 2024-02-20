@@ -1,6 +1,6 @@
 module A = Atomic
 module TLS = Thread_local_storage
-module ED = Effect.Deep
+module ES = Effect.Shallow
 module Trace = Trace_core
 
 let spf = Printf.sprintf

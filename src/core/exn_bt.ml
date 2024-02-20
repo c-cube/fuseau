@@ -1,3 +1,5 @@
+open Common_
+
 type t = {
   exn: exn;
   bt: Printexc.raw_backtrace;
@@ -17,9 +19,9 @@ let show self = Printexc.to_string self.exn
 let[@inline] raise self = Printexc.raise_with_backtrace self.exn self.bt
 
 let[@inline] discontinue k self =
-  Effect.Deep.discontinue_with_backtrace k self.exn self.bt
+  ES.discontinue_with_backtrace k self.exn self.bt
 
 let[@inline] discontinue_with k self h =
-  Effect.Shallow.discontinue_with_backtrace k self.exn self.bt h
+  ES.discontinue_with_backtrace k self.exn self.bt h
 
 type nonrec 'a result = ('a, t) result

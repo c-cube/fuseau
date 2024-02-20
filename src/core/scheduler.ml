@@ -4,8 +4,8 @@ type microtask = unit -> unit
 
 type task =
   | T_start : 'a Fiber.t * (unit -> 'a) -> task
-  | T_cont : Fiber.any * ('a, unit) ED.continuation * 'a -> task
-  | T_discont : (_, unit) ED.continuation * Exn_bt.t -> task
+  | T_cont : Fiber.any * ('a, unit) ES.continuation * 'a -> task
+  | T_discont : _ Fiber.t * (_, unit) ES.continuation * Exn_bt.t -> task
   | T_run : (unit -> unit) -> task
 
 type t = {
@@ -161,11 +161,12 @@ let run_task_and_resolve_fiber (self : t) fiber f =
     trace_exit_fiber_ self;
     Fiber.cancel fiber (Exn_bt.make exn bt)
 
-let run_task (self : t) (task : task) : unit =
-  match task with
-  | T_start (fiber, f) ->
+open struct
+  let exnc exn = Printf.eprintf "fiber raised %s\n%!" (Printexc.to_string exn)
+
+  let mk_handler self fiber : _ ES.handler =
     (* the main effect handler *)
-    let effc : type b. b Effect.t -> ((b, unit) ED.continuation -> 'a) option =
+    let effc : type b. b Effect.t -> ((b, unit) ES.continuation -> 'a) option =
       function
       | Effects.Suspend { before_suspend } ->
         Some
@@ -196,7 +197,7 @@ let run_task (self : t) (task : task) : unit =
             | Some ebt ->
               (* fail the fiber *)
               run_from_anywhere self (fun () ->
-                  schedule_no_check_ self (T_discont (k, ebt)))
+                  schedule_no_check_ self (T_discont (fiber, k, ebt)))
             | None -> before_suspend ~wakeup)
       | Effects.Yield ->
         Some
@@ -206,27 +207,34 @@ let run_task (self : t) (task : task) : unit =
       | _ -> None
     in
 
+    { effc; retc = Fun.id; exnc }
+end
+
+let run_task (self : t) (task : task) : unit =
+  match task with
+  | T_start (fiber, f) ->
     if not (Fiber.is_cancelled fiber) then (
       (* whole fiber runs under the effect handler *)
       self.cur_fiber <- Some (Any_fiber fiber);
       trace_enter_fiber_ self fiber;
 
-      try ED.try_with (run_task_and_resolve_fiber self fiber) f { ED.effc }
-      with exn ->
-        Printf.eprintf "fiber raised %s\n%!" (Printexc.to_string exn)
+      ES.continue_with
+        (ES.fiber (run_task_and_resolve_fiber self fiber))
+        f (mk_handler self fiber)
     )
   | T_cont ((Any_fiber fiber as any_fib), k, x) ->
     (match Fiber.peek fiber with
     | Some (Error ebt) ->
       (* cleanup *)
-      Exn_bt.discontinue k ebt
+      Exn_bt.discontinue k ebt (mk_handler self fiber)
     | Some _ -> assert false
     | None ->
       (* continue running the fiber *)
       self.cur_fiber <- Some any_fib;
       trace_enter_fiber_ self fiber;
-      ED.continue k x)
-  | T_discont (k, ebt) -> Exn_bt.discontinue k ebt
+      ES.continue_with k x (mk_handler self fiber))
+  | T_discont (fiber, k, ebt) ->
+    Exn_bt.discontinue k ebt (mk_handler self fiber)
   | T_run f -> f ()
 
 let run_iteration (self : t) : unit =
