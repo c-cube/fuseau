@@ -1,6 +1,7 @@
 module F = Fuseau_lwt
 module Trace = Trace_core
 module Str_set = CCSet.Make (String)
+module Cohc = Cohttp_lwt_unix
 
 module Uri_tbl = CCHashtbl.Make (struct
   include Uri
@@ -10,7 +11,11 @@ end)
 
 let ( let@ ) = ( @@ )
 let spf = Printf.sprintf
+
+(* config *)
+
 let verbose_ = ref 0
+let curl = ref true
 
 module Run = struct
   type t = {
@@ -113,6 +118,40 @@ module Run = struct
       F.Chan.close self.tasks
     )
 
+  let get_curl ~client ~uri () : (string * int, string) result =
+    (* fetch URL  *)
+    let resp =
+      let fut =
+        Ezcurl_lwt.get
+          ~config:
+            Ezcurl_lwt.Config.(
+              default |> max_redirects 10 |> verbose (!verbose_ > 1))
+          ~tries:3 ~client ~url:(Uri.to_string uri) ()
+      in
+      let@ () = Fuseau.with_cancel_callback (fun _ -> Lwt.cancel fut) in
+
+      F.await_lwt fut
+    in
+    match resp with
+    | Ok { Ezcurl_lwt.code; body; _ } -> Ok (body, code)
+    | Error (_errcode, msg) -> Error msg
+
+  let get_cohttp ~uri () : (string * int, string) result =
+    try
+      (* fetch URL *)
+      let resp, body =
+        let fut = Cohc.Client.get uri in
+        let@ () = Fuseau.with_cancel_callback (fun _ -> Lwt.cancel fut) in
+
+        let resp, body = F.await_lwt fut in
+        let body = Cohttp_lwt.Body.to_string body |> F.await_lwt in
+        resp, body
+      in
+
+      let code = Cohttp.Response.status resp |> Cohttp.Code.code_of_status in
+      Ok (body, code)
+    with e -> Error (Printexc.to_string e)
+
   let process_task (self : t) ~idx ~client (uri : Uri.t) : unit =
     self.n <- 1 + self.n;
 
@@ -120,20 +159,15 @@ module Run = struct
     if !verbose_ > 0 then
       Printf.eprintf "[w%d] crawl %s\n%!" idx (Uri.to_string uri);
 
-    (* fetch URL (only 100kb) *)
+    (* fetch URL  *)
     let resp =
-      let fut =
-        Ezcurl_lwt.get
-          ~config:Ezcurl_lwt.Config.(default |> max_redirects 10)
-          ~tries:3 ~client ~range:"0-100000" ~url:(Uri.to_string uri) ()
-      in
-      let@ () = Fuseau.with_cancel_callback (fun _ -> Lwt.cancel fut) in
-
-      F.await_lwt fut
+      if !curl then
+        get_curl ~client ~uri ()
+      else
+        get_cohttp ~uri ()
     in
-
     (match resp with
-    | Ok { Ezcurl_lwt.code; body; _ } ->
+    | Ok (body, code) ->
       if !verbose_ > 1 then
         Printf.eprintf "[w%d] got code=%d body=%dB from %s\n%!" idx code
           (String.length body) (Uri.to_string uri);
@@ -173,12 +207,10 @@ module Run = struct
               push_task self uri')
           uris
       )
-    | Error (errcode, msg) ->
+    | Error msg ->
       if !verbose_ > 2 then
-        Printf.eprintf "[w%d] error when fetching %s (code=%d):\n  %s\n%!" idx
-          (Uri.to_string uri)
-          (Curl.int_of_curlCode errcode)
-          msg;
+        Printf.eprintf "[w%d] error when fetching %s\n%s\n%!" idx
+          (Uri.to_string uri) msg;
       (* bad URL! *)
       self.bad <- uri :: self.bad);
     if !verbose_ > 1 then Printf.eprintf "[w%d] done with crawling\n%!" idx;
@@ -192,7 +224,7 @@ module Run = struct
     while !continue do
       let reached_max = self.max >= 0 && self.n + self.in_flight > self.max in
       Trace.counter_int "in_flight" self.in_flight;
-      Trace.counter_int "in_flight" self.n;
+      Trace.counter_int "n-tasks-done" self.n;
       let no_other_task = self.in_flight = 0 && F.Chan.is_empty self.tasks in
       Trace.message "main loop" ~data:(fun () ->
           [
@@ -283,6 +315,7 @@ let main () : int =
         Arg.String (fun s -> domains := Str_set.add s !domains),
         " alias to --domain" );
       "--max", Arg.Set_int max_, " max number of pages to explore";
+      "--cohttp", Arg.Clear curl, " use cohttp";
       "-w", Arg.Set_int w, " number of workers (default 20)";
       "-j", Arg.Set_int j, " number of background threads";
     ]

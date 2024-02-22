@@ -2,5 +2,5 @@
 (executable
   (name argiope)
   (libraries containers uri lambdasoup trace.core trace-tef
-             moonpool fuseau.moonpool
+             moonpool fuseau.moonpool cohttp cohttp-lwt-unix
              lwt ezcurl-lwt fuseau fuseau-lwt))
