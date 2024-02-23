@@ -1,4 +1,5 @@
 
 (tests
   (names t1 t2 t3 t_chan_chain)
+  (package fuseau)
   (libraries fuseau fuseau.unix trace trace-tef))

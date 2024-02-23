@@ -42,6 +42,7 @@
   (trace (>= 0.6))
   lwt
   base-unix
+  (trace-tef :with-test)
   (fuseau (= :version)))
  (tags
   (fuseau lwt)))

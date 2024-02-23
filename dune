@@ -3,4 +3,5 @@
   (_ (flags :standard -strict-sequence -warn-error -a+8 -w +a-4-30-40-41-42-70)))
 
 (mdx
+  (package fuseau)
   (libraries fuseau fuseau.unix))

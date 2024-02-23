@@ -12,6 +12,7 @@ depends: [
   "trace" {>= "0.6"}
   "lwt"
   "base-unix"
+  "trace-tef" {with-test}
   "fuseau" {= version}
   "odoc" {with-doc}
 ]
