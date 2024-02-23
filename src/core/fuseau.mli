@@ -517,7 +517,10 @@ val yield : unit -> unit
 
 val get_scheduler : unit -> Scheduler.t
 (** This returns the scheduler on which the caller runs. It must be
-    called from inside a fiber. *)
+    called from inside a fiber, or from inside the thread
+    running {!main}.
+    @raise Failure if not run from inside a fiber or the thread
+    running {!main}. *)
 
 (** {2 Main loop.}
 
