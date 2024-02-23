@@ -45,8 +45,7 @@ module type S = sig
   val delete_one : (elt -> elt -> bool) -> elt -> t -> t
   (** [delete_one eq x h] uses [eq] to find one occurrence of a value [x]
       if it exist in the heap [h], and delete it.
-      If [h] do not contain [x] then it return [h].
-      @since 2.0 *)
+      If [h] do not contain [x] then it return [h]. *)
 
   val size : t -> int
 end

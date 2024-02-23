@@ -360,8 +360,7 @@ module Iostream : sig
     (** Output the whole string. *)
 
     val output_line : #t -> string -> unit
-    (** Output the whole string followed by ['\n'].
-    @since 0.2 *)
+    (** Output the whole string followed by ['\n']. *)
 
     val output_lines : #t -> string Seq.t -> unit
     (** Output a series of lines, each terminated by ['\n']. *)
