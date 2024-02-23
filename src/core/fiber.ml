@@ -217,7 +217,12 @@ let[@inline] suspend ~before_suspend =
 
 (** A helper to get around circular dependencies. This is implemented via
       TLS, looking in the current thread's scheduler (if any). *)
-let get_current : (unit -> any option) ref = ref (fun () -> None)
+let get_current_ : (unit -> any option) ref = ref (fun () -> None)
+
+let[@inline] get_current () : any =
+  match !get_current_ () with
+  | None -> failwith "`Fiber.get_current` must be called from inside a fiber"
+  | Some any -> any
 
 let add_cancel_cb_ (self : _ t) cb =
   while
@@ -247,7 +252,7 @@ let remove_top_cancel_cb_ (self : _ t) =
   done
 
 let with_cancel_callback cb (k : unit -> 'a) : 'a =
-  match !get_current () with
+  match !get_current_ () with
   | None -> failwith "with_cancel_callback` must be called from inside a fiber"
   | Some (Any_fiber f) ->
     add_cancel_cb_ f cb;
@@ -267,7 +272,7 @@ let await self =
   | Done (Error ebt) -> Exn_bt.raise ebt
   | Wait _ ->
     (* polling point *)
-    (match !get_current () with
+    (match !get_current_ () with
     | None ->
       Trace.message "await outside of fiber";
       failwith "`await` must be called from inside a fiber"
@@ -285,7 +290,7 @@ let try_await self =
   | Done res -> res
   | Wait _ ->
     (* polling point *)
-    (match !get_current () with
+    (match !get_current_ () with
     | None -> failwith "`await` must be called from inside a fiber"
     | Some (Any_fiber f) ->
       (match A.get f.state with
@@ -303,7 +308,7 @@ let try_await self =
 
 let yield () =
   (* polling point *)
-  (match !get_current () with
+  (match !get_current_ () with
   | None -> failwith "yield` must be called from inside a fiber"
   | Some (Any_fiber f) ->
     (match A.get f.state with

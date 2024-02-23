@@ -28,7 +28,7 @@ let k_current_scheduler : t option ref TLS.key =
 
 let () =
   (* to get current fiber, just get current scheduler *)
-  Fiber.get_current :=
+  Fiber.get_current_ :=
     fun () ->
       let cur_sched = TLS.get k_current_scheduler in
       match !cur_sched with
@@ -105,18 +105,20 @@ let[@inline] trace_exit_fiber_ (self : t) =
   )
 
 (** Scheduler for the current thread *)
-let[@inline] get_sched_for_cur_thread_ () : t =
+let[@inline] get_for_current_thread () : t =
   match !(TLS.get k_current_scheduler) with
-  | None -> failwith "must be run from inside the event loop"
+  | None ->
+    failwith
+      "Scheduler.get_for_current_thread: must be run from inside the event loop"
   | Some sch -> sch
 
 let[@inline] schedule_micro_task (f : unit -> unit) : unit =
-  let self = get_sched_for_cur_thread_ () in
+  let self = get_for_current_thread () in
   schedule_micro_task_ self f
 
 let spawn ?name ?(propagate_cancel_to_parent = true) (f : unit -> 'a) :
     'a Fiber.t =
-  let self : t = get_sched_for_cur_thread_ () in
+  let self : t = get_for_current_thread () in
   check_active_ self;
 
   (* build a switch for the fiber *)

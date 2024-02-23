@@ -12,8 +12,8 @@ let cancel_after_s (delay : float) =
   let sched = get_sched "sleep" () in
 
   let fiber =
-    match !Fiber.get_current () with
-    | None -> failwith "cancel_after must be called from a fiber"
+    match !Fiber.get_current_ () with
+    | None -> failwith "`cancel_after` must be called from a fiber"
     | Some f -> f
   in
 

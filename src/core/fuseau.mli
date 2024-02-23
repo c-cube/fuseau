@@ -156,6 +156,10 @@ module Fiber : sig
     with the result. If the fiber is done already then the
     callback is invoked immediately with its result. *)
 
+  val get_current : unit -> any
+  (** [get_current ()] returns the currently running fiber.
+      @raise Failure if called from outside a fiber *)
+
   (**/**)
 
   module Private_ : sig
@@ -231,6 +235,11 @@ module Scheduler : sig
 
   val n_tasks_since_beginning : t -> int
   (** Number of tasks run so far in this scheduler. *)
+
+  val get_for_current_thread : unit -> t
+  (** Get scheduler from the current thread. This must be called
+      from within a Fuseau fiber.
+      @raise Failure if not run from within a fiber *)
 end
 
 module Event_loop = Event_loop

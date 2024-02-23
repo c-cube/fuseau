@@ -121,14 +121,21 @@ let await_lwt (fut : _ Lwt.t) =
     | Some x -> x
     | None -> assert false)
 
-let spawn_as_lwt ?name ?propagate_cancel_to_parent (f : unit -> 'a) : 'a Lwt.t =
+let spawn_as_lwt ?parent ?name ?propagate_cancel_to_parent (f : unit -> 'a) :
+    'a Lwt.t =
   let fut, promise = Lwt.wait () in
+  let run () =
+    try
+      let x = f () in
+      Lwt.wakeup promise x
+    with exn -> Lwt.wakeup_exn promise exn
+  in
   let _fib =
-    Fuseau.spawn ?name ?propagate_cancel_to_parent (fun () ->
-        try
-          let x = f () in
-          Lwt.wakeup promise x
-        with exn -> Lwt.wakeup_exn promise exn)
+    match parent with
+    | None -> Fuseau.spawn ?name ?propagate_cancel_to_parent run
+    | Some p ->
+      let scheduler = Fuseau.Scheduler.get_for_current_thread () in
+      Fuseau.spawn_as_child_of ?name ?propagate_cancel_to_parent scheduler p run
   in
   fut
 
@@ -358,6 +365,7 @@ module Net = struct
     type t = Lwt_io.server
 
     let establish ?backlog ?no_close addr handler : t =
+      let (Any_fiber parent_fiber) = Fuseau.Fiber.get_current () in
       let server =
         Lwt_io.establish_server_with_client_socket ?backlog ?no_close addr
           (fun client_addr client_sock ->
@@ -368,8 +376,8 @@ module Net = struct
               Iostream.Out.of_unix_fd @@ Lwt_unix.unix_file_descr client_sock
             in
 
-            spawn_as_lwt ~name:"tcp.server.handler" (fun () ->
-                handler client_addr ic oc))
+            spawn_as_lwt ~parent:parent_fiber ~name:"tcp.server.handler"
+              (fun () -> handler client_addr ic oc))
       in
       await_lwt server
 
