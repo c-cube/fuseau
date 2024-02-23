@@ -524,14 +524,29 @@ val get_scheduler : unit -> Scheduler.t
 
 (** {2 Main loop.}
 
-   This is the loop that runs both fibers, and the IO event loop,
-   in an interspersed way.
+   This is the loop that runs fibers that are ready, and the IO event loop,
+   in an interleaved way.
 *)
 
 val main : loop:Event_loop.t -> (unit -> 'a) -> 'a
 (** [main f] runs [f()] in an event loop. The value is returned
     when the loop has nothing else to do, even if the particular
     computation was finished earlier.
+
+    A high level overview of that [main ~loop f] does, is that
+    it has an outer loop in which it does:
+      - call the scheduler to run all ready fibers, until no ready fiber remains
+        (ready means the fiber isn't suspended while waiting for
+        some event to happen)
+      - call the event loop without blocking, to poll for IOs
+      - if no fiber is ready after polling for IO events, then
+          call the event loop and allow it to block/sleep until
+          the next event occur (e.g. a timer, or a socket becoming
+          readable).
+
+    This only returns when the main fiber running [f()] is
+    resolved, either by cancellation or because [f()] returned
+    and all child fibers resolved.
 
     @param loop if provided, this event loop is used
     during the computation. *)
