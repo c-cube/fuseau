@@ -305,13 +305,16 @@ module Cancel_handle = Cancel_handle
 
     These streams of bytes can be used for read and write operations.
     Their usage is not required, in some event loops
-    such as {!Fuseau_lwt}. *)
+    such as {!Fuseau_lwt}. This is compatible with
+    the {{:https://github.com/c-cube/ocaml-iostream} iostream library}. *)
 module Iostream : sig
-  (** Output stream. *)
+  (** Buffered output stream. *)
   module Out : sig
     (** An output stream, ie. a place into which we can write bytes.
 
-    This can be a [Buffer.t], an [out_channel], a [Unix.file_descr], etc. *)
+    This can be a [Buffer.t], an [out_channel], a [Unix.file_descr], etc.
+    It must be buffered to amortize the cost of individual small writes (including
+    [output_char]). *)
     class type t =
       object
         method output_char : char -> unit
