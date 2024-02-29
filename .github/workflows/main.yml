@@ -30,7 +30,7 @@ jobs:
           dune-cache: true
           allow-prerelease-opam: true
 
-      - run: opam install -t fuseau fuseau-lwt --deps-only
+      - run: opam install -t fuseau fuseau-lwt fuseau-poll --deps-only
       - run: opam exec -- dune build @install
       - run: opam exec -- dune runtest
 

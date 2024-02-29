@@ -1,0 +1,7 @@
+
+(library
+  (name fuseau_poll)
+  (public_name fuseau-poll)
+  (synopsis "Event loop for Fuseau based on the poll library (with multiple backends)")
+  (flags :standard -open Fuseau)
+  (libraries poll fuseau trace.core))

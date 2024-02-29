@@ -48,4 +48,17 @@
  (tags
   (fuseau lwt)))
 
+(package
+ (name fuseau-poll)
+ (synopsis "Poll backend for Fuseau")
+ (depends
+  dune
+  (trace (>= 0.6))
+  (poll (>= 0.3))
+  base-unix
+  (trace-tef :with-test)
+  (fuseau (= :version)))
+ (tags
+  (fuseau poll epoll kqueue wepoll)))
+
 ; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project
