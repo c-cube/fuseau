@@ -1,5 +1,7 @@
 # Fuseau
 
+**STATUS**: archived. This was a very interesting experiment but for production you should use lwt_direct/eio/miou/… .
+
 This is an experimental concurrency/IO library for OCaml 5. Currently the only backend is a naive one
 using `Unix.select` but I plan to add more robust ones.
 
